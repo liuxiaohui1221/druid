@@ -181,6 +181,7 @@ public class IncrementalIndexAdapter implements IndexableAdapter
       return BitmapValues.EMPTY;
     }
 
+    //倒排：维度编码值对应的所在行号列表
     MutableBitmap bitmapIndex = accessor.invertedIndexes[id];
 
     if (bitmapIndex == null) {

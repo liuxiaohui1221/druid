@@ -75,6 +75,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -180,7 +181,8 @@ public class IndexMergerV9 implements IndexMerger
       final Function<List<TransformableRowIterator>, TimeAndDimsIterator> rowMergerFn,
       final boolean fillRowNumConversions,
       final IndexSpec indexSpec,
-      final @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory
+      final @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      final boolean materializedMerge
   ) throws IOException
   {
     progress.start();
@@ -258,7 +260,8 @@ public class IndexMergerV9 implements IndexMerger
           mergedMetrics,
           rowMergerFn,
           handlers,
-          mergers
+          mergers,
+          materializedMerge
       );
       closer.register(timeAndDimsIterator);
       final GenericColumnSerializer timeWriter = setupTimeWriter(segmentWriteOutMedium, indexSpec);
@@ -564,8 +567,9 @@ public class IndexMergerV9 implements IndexMerger
     }
 
     long time = System.currentTimeMillis();
-    while (timeAndDimsIterator.moveToNext()) {
+    while (timeAndDimsIterator.moveToNext()) { // 相同分组行的维度值聚合
       progress.progress();
+      //获取聚合后的行
       TimeAndDimsPointer timeAndDims = timeAndDimsIterator.getPointer();
       timeWriter.serialize(timeAndDims.timestampSelector);
 
@@ -578,6 +582,7 @@ public class IndexMergerV9 implements IndexMerger
         if (merger.canSkip()) {
           continue;
         }
+        //处理合并后的当前selector指向行对应的维度编码值
         merger.processMergedRow(timeAndDims.getDimensionSelector(dimIndex));
       }
 
@@ -588,16 +593,21 @@ public class IndexMergerV9 implements IndexMerger
              originalIteratorIndex >= 0;
              originalIteratorIndex =
                  comprisedRows.nextCurrentlyCombinedOriginalIteratorIndex(originalIteratorIndex + 1)) {
-
+          //当前聚合的新行在originalIteratorIndex对象中对应的原始行号，所有indexer对象对应行号顺序要一致。
+          //IntBuffer长度是原始indexer中数据总条数，
+          // 若每产生一新行聚合了indexer1对象中0,1,2,4行，indexer2对象中的0,1,6,7行，则需要在对应下标位置设置rowCount。
           IntBuffer conversionBuffer = rowNumConversions.get(originalIteratorIndex);
-          int minRowNum = comprisedRows.getMinCurrentlyCombinedRowNumByOriginalIteratorIndex(originalIteratorIndex);
-          int maxRowNum = comprisedRows.getMaxCurrentlyCombinedRowNumByOriginalIteratorIndex(originalIteratorIndex);
-
-          for (int rowNum = minRowNum; rowNum <= maxRowNum; rowNum++) {
+          // int minRowNum = comprisedRows.getMinCurrentlyCombinedRowNumByOriginalIteratorIndex(originalIteratorIndex);
+          // int maxRowNum = comprisedRows.getMaxCurrentlyCombinedRowNumByOriginalIteratorIndex(originalIteratorIndex);
+          Iterator<Integer> originalRowNums = comprisedRows.getCurrentlyCombinedRowNumsByOriginalIteratorIndex(
+              originalIteratorIndex);
+          while (originalRowNums.hasNext()) {
+            int rowNum = originalRowNums.next();
             while (conversionBuffer.position() < rowNum) {
               conversionBuffer.put(INVALID_ROW);
             }
-            conversionBuffer.put(rowCount);
+            System.out.println(rowNum + "," + rowCount);
+            conversionBuffer.put(rowNum, rowCount);
           }
 
         }
@@ -630,6 +640,7 @@ public class IndexMergerV9 implements IndexMerger
     }
     log.debug("completed walk through of %,d rows in %,d millis.", rowCount, System.currentTimeMillis() - startTime);
     progress.stopSection(section);
+
     return rowNumConversions;
   }
 
@@ -874,12 +885,14 @@ public class IndexMergerV9 implements IndexMerger
         //                     In this case, true/false won't cause reOrdering in merge stage
         //                     while merging a single iterable
         false,
+        null,
         index.getMetricAggs(),
         outDir,
         indexSpec,
         progress,
         segmentWriteOutMediumFactory,
-        -1
+        -1,
+        false
     );
   }
 
@@ -910,6 +923,33 @@ public class IndexMergerV9 implements IndexMerger
   public File mergeQueryableIndex(
       List<QueryableIndex> indexes,
       boolean rollup,
+      final List<String> targetDimensions,
+      final AggregatorFactory[] metricAggs,
+      File outDir,
+      IndexSpec indexSpec,
+      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      int maxColumnsToMerge,
+      final boolean materializedMerge
+  ) throws IOException
+  {
+    return mergeQueryableIndex(
+        indexes,
+        rollup,
+        targetDimensions,
+        metricAggs,
+        outDir,
+        indexSpec,
+        new BaseProgressIndicator(),
+        segmentWriteOutMediumFactory,
+        maxColumnsToMerge,
+        materializedMerge
+    );
+  }
+
+  @Override
+  public File mergeQueryableIndex(
+      List<QueryableIndex> indexes,
+      boolean rollup,
       final AggregatorFactory[] metricAggs,
       File outDir,
       IndexSpec indexSpec,
@@ -919,14 +959,61 @@ public class IndexMergerV9 implements IndexMerger
   ) throws IOException
   {
     return multiphaseMerge(
-        IndexMerger.toIndexableAdapters(indexes),
+        IndexMerger.toIndexableAdapters(indexes, null),
         rollup,
+        null,
         metricAggs,
         outDir,
         indexSpec,
         progress,
         segmentWriteOutMediumFactory,
-        maxColumnsToMerge
+        maxColumnsToMerge,
+        false
+    );
+  }
+
+  @Override
+  public File mergeQueryableIndex(
+      List<QueryableIndex> indexes,
+      boolean rollup,
+      final List<String> targetDimensions,
+      final AggregatorFactory[] metricAggs,
+      File outDir,
+      IndexSpec indexSpec,
+      ProgressIndicator progress,
+      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      int maxColumnsToMerge,
+      final boolean materializedMerge
+  ) throws IOException
+  {
+    return multiphaseMerge(
+        IndexMerger.toIndexableAdapters(indexes, targetDimensions),
+        rollup,
+        targetDimensions,
+        metricAggs,
+        outDir,
+        indexSpec,
+        progress,
+        segmentWriteOutMediumFactory,
+        maxColumnsToMerge,
+        materializedMerge
+    );
+  }
+
+  @Override
+  public File merge(
+      List<IndexableAdapter> indexes,
+      boolean rollup,
+      final List<String> targetDimensions,
+      final AggregatorFactory[] metricAggs,
+      File outDir,
+      IndexSpec indexSpec,
+      int maxColumnsToMerge,
+      final boolean materializedMerge
+  ) throws IOException
+  {
+    return multiphaseMerge(indexes, rollup, targetDimensions, metricAggs, outDir, indexSpec,
+                           new BaseProgressIndicator(), null, maxColumnsToMerge, materializedMerge
     );
   }
 
@@ -940,18 +1027,22 @@ public class IndexMergerV9 implements IndexMerger
       int maxColumnsToMerge
   ) throws IOException
   {
-    return multiphaseMerge(indexes, rollup, metricAggs, outDir, indexSpec, new BaseProgressIndicator(), null, maxColumnsToMerge);
+    return multiphaseMerge(indexes, rollup, null, metricAggs, outDir, indexSpec,
+                           new BaseProgressIndicator(), null, maxColumnsToMerge, false
+    );
   }
 
   private File multiphaseMerge(
       List<IndexableAdapter> indexes,
       final boolean rollup,
+      final List<String> targetDimensions,
       final AggregatorFactory[] metricAggs,
       File outDir,
       IndexSpec indexSpec,
       ProgressIndicator progress,
       @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
-      int maxColumnsToMerge
+      int maxColumnsToMerge,
+      final boolean materializedMerge
   ) throws IOException
   {
     FileUtils.deleteDirectory(outDir);
@@ -963,11 +1054,13 @@ public class IndexMergerV9 implements IndexMerger
       return merge(
           indexes,
           rollup,
+          targetDimensions,
           metricAggs,
           outDir,
           indexSpec,
           progress,
-          segmentWriteOutMediumFactory
+          segmentWriteOutMediumFactory,
+          materializedMerge
       );
     }
 
@@ -996,11 +1089,13 @@ public class IndexMergerV9 implements IndexMerger
           File phaseOutput = merge(
               phase,
               rollup,
+              targetDimensions,
               metricAggs,
               phaseOutDir,
               indexSpec,
               progress,
-              segmentWriteOutMediumFactory
+              segmentWriteOutMediumFactory,
+              materializedMerge
           );
           currentOutputs.add(phaseOutput);
         }
@@ -1012,7 +1107,7 @@ public class IndexMergerV9 implements IndexMerger
           List<IndexableAdapter> qIndexAdapters = new ArrayList<>();
           for (File outputFile : currentOutputs) {
             QueryableIndex qIndex = indexIO.loadIndex(outputFile, true, SegmentLazyLoadFailCallback.NOOP);
-            qIndexAdapters.add(new QueryableIndexIndexableAdapter(qIndex));
+            qIndexAdapters.add(new QueryableIndexIndexableAdapter(qIndex, targetDimensions));
           }
           currentPhases = getMergePhases(qIndexAdapters, maxColumnsToMerge);
           currentOutputs = new ArrayList<>();
@@ -1086,14 +1181,22 @@ public class IndexMergerV9 implements IndexMerger
   private File merge(
       List<IndexableAdapter> indexes,
       final boolean rollup,
+      final List<String> targetDimensions,
       final AggregatorFactory[] metricAggs,
       File outDir,
       IndexSpec indexSpec,
       ProgressIndicator progress,
-      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory
+      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      final boolean materializedMerge
   ) throws IOException
   {
-    final List<String> mergedDimensions = IndexMerger.getMergedDimensions(indexes);
+    List<String> mergedDimensions = IndexMerger.getMergedDimensions(indexes);
+    if (materializedMerge) {
+      //是否包含targetDimensions，包含则使用targetDimensions
+      if (mergedDimensions.containsAll(targetDimensions)) {
+        mergedDimensions = targetDimensions;
+      }
+    }
 
     final List<String> mergedMetrics = IndexMerger.mergeIndexed(
         indexes.stream().map(IndexableAdapter::getMetricNames).collect(Collectors.toList())
@@ -1134,7 +1237,12 @@ public class IndexMergerV9 implements IndexMerger
 
     Function<List<TransformableRowIterator>, TimeAndDimsIterator> rowMergerFn;
     if (rollup) {
-      rowMergerFn = rowIterators -> new RowCombiningTimeAndDimsIterator(rowIterators, sortedMetricAggs, mergedMetrics);
+      rowMergerFn = rowIterators -> new RowCombiningTimeAndDimsIterator(
+          rowIterators,
+          sortedMetricAggs,
+          mergedMetrics,
+          targetDimensions
+      );
     } else {
       rowMergerFn = MergingRowIterator::new;
     }
@@ -1149,7 +1257,8 @@ public class IndexMergerV9 implements IndexMerger
         rowMergerFn,
         true,
         indexSpec,
-        segmentWriteOutMediumFactory
+        segmentWriteOutMediumFactory,
+        materializedMerge
     );
   }
 
@@ -1168,7 +1277,7 @@ public class IndexMergerV9 implements IndexMerger
   ) throws IOException
   {
     try (QueryableIndex index = indexIO.loadIndex(inDir)) {
-      final IndexableAdapter adapter = new QueryableIndexIndexableAdapter(index);
+      final IndexableAdapter adapter = new QueryableIndexIndexableAdapter(index, null);
       return makeIndexFiles(
           ImmutableList.of(adapter),
           null,
@@ -1179,7 +1288,8 @@ public class IndexMergerV9 implements IndexMerger
           Iterables::getOnlyElement,
           false,
           indexSpec,
-          segmentWriteOutMediumFactory
+          segmentWriteOutMediumFactory,
+          false
       );
     }
   }
@@ -1212,7 +1322,8 @@ public class IndexMergerV9 implements IndexMerger
         MergingRowIterator::new,
         true,
         indexSpec,
-        segmentWriteOutMediumFactory
+        segmentWriteOutMediumFactory,
+        false
     );
   }
 
@@ -1240,7 +1351,8 @@ public class IndexMergerV9 implements IndexMerger
       final List<String> mergedMetrics,
       final Function<List<TransformableRowIterator>, TimeAndDimsIterator> rowMergerFn,
       final Map<String, DimensionHandler> handlers,
-      final List<DimensionMergerV9> mergers
+      final List<DimensionMergerV9> mergers,
+      final boolean materializedMerge
   )
   {
     List<TransformableRowIterator> perIndexRowIterators = Lists.newArrayListWithCapacity(indexes.size());
@@ -1253,7 +1365,8 @@ public class IndexMergerV9 implements IndexMerger
             mergedMetrics,
             handlers,
             adapter,
-            target
+            target,
+            materializedMerge
         );
       }
       perIndexRowIterators.add(IndexMerger.toMergedIndexRowIterator(target, i, mergers));
@@ -1266,7 +1379,8 @@ public class IndexMergerV9 implements IndexMerger
       List<String> reorderedMetrics,
       Map<String, DimensionHandler> originalHandlers,
       IndexableAdapter originalAdapter,
-      TransformableRowIterator originalIterator
+      TransformableRowIterator originalIterator,
+      boolean materializedMerge
   )
   {
     RowPointer reorderedRowPointer = reorderRowPointerColumns(
@@ -1274,14 +1388,16 @@ public class IndexMergerV9 implements IndexMerger
         reorderedMetrics,
         originalHandlers,
         originalAdapter,
-        originalIterator.getPointer()
+        originalIterator.getPointer(),
+        materializedMerge
     );
     TimeAndDimsPointer reorderedMarkedRowPointer = reorderRowPointerColumns(
         reorderedDimensions,
         reorderedMetrics,
         originalHandlers,
         originalAdapter,
-        originalIterator.getMarkedPointer()
+        originalIterator.getMarkedPointer(),
+        materializedMerge
     );
     return new ForwardingRowIterator(originalIterator)
     {
@@ -1304,7 +1420,8 @@ public class IndexMergerV9 implements IndexMerger
       List<String> reorderedMetrics,
       Map<String, DimensionHandler> originalHandlers,
       IndexableAdapter originalAdapter,
-      T originalRowPointer
+      T originalRowPointer,
+      boolean materializedMerge
   )
   {
     ColumnValueSelector[] reorderedDimensionSelectors = reorderedDimensions
@@ -1339,7 +1456,8 @@ public class IndexMergerV9 implements IndexMerger
           reorderedHandlers,
           reorderedMetricSelectors,
           reorderedMetrics,
-          ((RowPointer) originalRowPointer).rowNumPointer
+          ((RowPointer) originalRowPointer).rowNumPointer,
+          !materializedMerge
       );
     } else {
       //noinspection unchecked
@@ -1348,7 +1466,8 @@ public class IndexMergerV9 implements IndexMerger
           reorderedDimensionSelectors,
           reorderedHandlers,
           reorderedMetricSelectors,
-          reorderedMetrics
+          reorderedMetrics,
+          !materializedMerge
       );
     }
   }

@@ -95,7 +95,7 @@ public class StringDimensionMergerV9 implements DimensionMergerV9
   @Nullable
   private ByteBufferWriter<ImmutableRTree> spatialWriter;
   @Nullable
-  private ArrayList<IntBuffer> dimConversions;
+  private ArrayList<IntBuffer> dimConversions; // dimConversions用于记录哪些indexer得维度字典需要做转换。
   @Nullable
   private List<IndexableAdapter> adapters;
   @Nullable
@@ -127,6 +127,7 @@ public class StringDimensionMergerV9 implements DimensionMergerV9
     this.closer = closer;
   }
 
+  //写维度值字典，维度基数统计dictionarySize
   @Override
   public void writeMergedValueDictionary(List<IndexableAdapter> adapters) throws IOException
   {
@@ -144,9 +145,11 @@ public class StringDimensionMergerV9 implements DimensionMergerV9
 
     int numMergeIndex = 0;
     Indexed<String> dimValueLookup = null;
+    //存放dimensionName维度列的所有indexer对象中的维度值字典
     Indexed<String>[] dimValueLookups = new Indexed[adapters.size() + 1];
     for (int i = 0; i < adapters.size(); i++) {
       @SuppressWarnings("MustBeClosedChecker") // we register dimValues in the closer
+          //维度值字典
           Indexed<String> dimValues = closer.register(adapters.get(i).getDimValueLookup(dimensionName));
       if (dimValues != null && !allNull(dimValues)) {
         dimHasValues = true;
@@ -185,6 +188,7 @@ public class StringDimensionMergerV9 implements DimensionMergerV9
       writeDictionary(() -> dictionaryMergeIterator);
       for (int i = 0; i < adapters.size(); i++) {
         if (dimValueLookups[i] != null && dictionaryMergeIterator.needConversion(i)) {
+          //dimConversions用于记录哪些indexer得维度字典需要做转换。
           dimConversions.set(i, dictionaryMergeIterator.conversions[i]);
         }
       }
@@ -350,6 +354,7 @@ public class StringDimensionMergerV9 implements DimensionMergerV9
     };
   }
 
+  //selector指定行对应的当前维度字段的编码值：单值，或多值
   @Override
   public void processMergedRow(ColumnValueSelector selector) throws IOException
   {

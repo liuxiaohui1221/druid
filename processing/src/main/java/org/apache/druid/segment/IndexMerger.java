@@ -67,12 +67,14 @@ public interface IndexMerger
 
   static List<String> getMergedDimensionsFromQueryableIndexes(List<QueryableIndex> indexes)
   {
-    return getMergedDimensions(toIndexableAdapters(indexes));
+    return getMergedDimensions(toIndexableAdapters(indexes, null));
   }
 
-  static List<IndexableAdapter> toIndexableAdapters(List<QueryableIndex> indexes)
+  static List<IndexableAdapter> toIndexableAdapters(List<QueryableIndex> indexes, List<String> targetDimensions)
   {
-    return indexes.stream().map(QueryableIndexIndexableAdapter::new).collect(Collectors.toList());
+    return indexes.stream()
+                  .map(index -> new QueryableIndexIndexableAdapter(index, targetDimensions))
+                  .collect(Collectors.toList());
   }
 
   static List<String> getMergedDimensions(List<IndexableAdapter> indexes)
@@ -212,6 +214,32 @@ public interface IndexMerger
       int maxColumnsToMerge
   ) throws IOException;
 
+
+  File mergeQueryableIndex(
+      List<QueryableIndex> indexes,
+      boolean rollup,
+      List<String> targetDimensions,
+      AggregatorFactory[] metricAggs,
+      File outDir,
+      IndexSpec indexSpec,
+      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      int maxColumnsToMerge,
+      boolean materializedMerge
+  ) throws IOException;
+
+  File mergeQueryableIndex(
+      List<QueryableIndex> indexes,
+      boolean rollup,
+      List<String> targetDimensions,
+      AggregatorFactory[] metricAggs,
+      File outDir,
+      IndexSpec indexSpec,
+      ProgressIndicator progress,
+      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      int maxColumnsToMerge,
+      boolean materializedMerge
+  ) throws IOException;
+
   @VisibleForTesting
   File merge(
       List<IndexableAdapter> indexes,
@@ -220,6 +248,18 @@ public interface IndexMerger
       File outDir,
       IndexSpec indexSpec,
       int maxColumnsToMerge
+  ) throws IOException;
+
+  @VisibleForTesting
+  File merge(
+      List<IndexableAdapter> indexes,
+      boolean rollup,
+      List<String> targetDimensions,
+      AggregatorFactory[] metricAggs,
+      File outDir,
+      IndexSpec indexSpec,
+      int maxColumnsToMerge,
+      boolean materializedMerge
   ) throws IOException;
 
   // Faster than IndexMaker
@@ -383,7 +423,7 @@ public interface IndexMerger
         return left.compareTo(right);
       }
     };
-
+    // 每个元素对应一个indexer的某列的所有维度值字典，pQueue：各个indexer元素，根据迭代器维度原始值按从小到大字段序排列
     protected final IntBuffer[] conversions;
     protected final List<Pair<ByteBuffer, Integer>> directBufferAllocations = new ArrayList<>();
     protected final PriorityQueue<Pair<Integer, PeekingIterator<String>>> pQueue;
@@ -432,6 +472,7 @@ public interface IndexMerger
       return !pQueue.isEmpty();
     }
 
+    //获取排序后的维度原始值
     @Override
     public String next()
     {
@@ -441,14 +482,16 @@ public interface IndexMerger
       }
       final String value = writeTranslate(smallest, counter);
 
+      //过滤具有相同的维度原始值
       while (!pQueue.isEmpty() && Objects.equals(value, pQueue.peek().rhs.peek())) {
         writeTranslate(pQueue.remove(), counter);
       }
-      counter++;
+      counter++; // 基数统计
 
       return value;
     }
 
+    //第index个对象是否维度值编码是顺序递增，若检测到不是，则返回true
     boolean needConversion(int index)
     {
       IntBuffer readOnly = conversions[index].asReadOnlyBuffer();
@@ -466,7 +509,7 @@ public interface IndexMerger
     private String writeTranslate(Pair<Integer, PeekingIterator<String>> smallest, int counter)
     {
       final int index = smallest.lhs;
-      final String value = smallest.rhs.next();
+      final String value = smallest.rhs.next(); // 移动指针，达到取出当前最小维度值的过滤目的。
 
       conversions[index].put(counter);
       if (smallest.rhs.hasNext()) {

@@ -21,10 +21,12 @@ package org.apache.druid.segment;
 
 import org.apache.druid.query.aggregation.AggregateCombiner;
 import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.roaringbitmap.RoaringBitmap;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
@@ -74,13 +76,14 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
   private final BitSet indexesOfCurrentlyCombinedOriginalIterators = new BitSet();
 
   /**
-   * This field and {@link #maxCurrentlyCombinedRowNumByOriginalIteratorIndex} designate "row num range" in each
+   * This field and {@link # maxCurrentlyCombinedRowNumByOriginalIteratorIndex} designate "row num range" in each
    * original iterator, points from which are currently combined (see {@link
    * #indexesOfCurrentlyCombinedOriginalIterators}). It could have been a single row number, if original iterators were
    * guaranteed to have no duplicate rows themselves, but they are not.
    */
-  private final int[] minCurrentlyCombinedRowNumByOriginalIteratorIndex;
-  private final int[] maxCurrentlyCombinedRowNumByOriginalIteratorIndex;
+  // private final int[] minCurrentlyCombinedRowNumByOriginalIteratorIndex;
+  // private final int[] maxCurrentlyCombinedRowNumByOriginalIteratorIndex;
+  private final RoaringBitmap[] combinedRowNumsOfOriginalIteratorIndexs;
 
   @Nullable
   private TimeAndDimsPointer currentTimeAndDimsPointer;
@@ -101,7 +104,8 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
   RowCombiningTimeAndDimsIterator(
       List<TransformableRowIterator> originalIterators,
       AggregatorFactory[] metricAggs,
-      List<String> metricNames
+      List<String> metricNames,
+      List<String> targetDimensions
   )
   {
     int numCombinedIterators = originalIterators.size();
@@ -131,7 +135,8 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
                 markedRowPointer.dimensionSelectors,
                 markedRowPointer.getDimensionHandlers(),
                 combinedMetricSelectors,
-                combinedMetricNames
+                combinedMetricNames,
+                targetDimensions == null
             );
           } else {
             return null;
@@ -139,9 +144,11 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
         }
     );
 
-    minCurrentlyCombinedRowNumByOriginalIteratorIndex = new int[numCombinedIterators];
-    Arrays.fill(minCurrentlyCombinedRowNumByOriginalIteratorIndex, MIN_CURRENTLY_COMBINED_ROW_NUM_UNSET_VALUE);
-    maxCurrentlyCombinedRowNumByOriginalIteratorIndex = new int[numCombinedIterators];
+    // minCurrentlyCombinedRowNumByOriginalIteratorIndex = new int[numCombinedIterators];
+    // Arrays.fill(minCurrentlyCombinedRowNumByOriginalIteratorIndex, MIN_CURRENTLY_COMBINED_ROW_NUM_UNSET_VALUE);
+    // maxCurrentlyCombinedRowNumByOriginalIteratorIndex = new int[numCombinedIterators];
+    combinedRowNumsOfOriginalIteratorIndexs = new RoaringBitmap[numCombinedIterators];
+    Arrays.fill(combinedRowNumsOfOriginalIteratorIndexs, new RoaringBitmap());
 
     if (mergingIterator.moveToNext()) {
       nextRowPointer = mergingIterator.getPointer();
@@ -157,8 +164,9 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
     for (int originalIteratorIndex = indexesOfCurrentlyCombinedOriginalIterators.nextSetBit(0);
          originalIteratorIndex >= 0;
          originalIteratorIndex = indexesOfCurrentlyCombinedOriginalIterators.nextSetBit(originalIteratorIndex + 1)) {
-      minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] =
-          MIN_CURRENTLY_COMBINED_ROW_NUM_UNSET_VALUE;
+      // minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] =
+      //     MIN_CURRENTLY_COMBINED_ROW_NUM_UNSET_VALUE;
+      combinedRowNumsOfOriginalIteratorIndexs[originalIteratorIndex].clear();
     }
     indexesOfCurrentlyCombinedOriginalIterators.clear();
   }
@@ -216,8 +224,10 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
     soleCurrentPointSourceOriginalIteratorIndex = originalIteratorIndex;
     indexesOfCurrentlyCombinedOriginalIterators.set(originalIteratorIndex);
     int rowNum = rowPointer.getRowNum();
-    minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
-    maxCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
+    // minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
+    // maxCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
+
+    combinedRowNumsOfOriginalIteratorIndexs[originalIteratorIndex].add(rowNum);
   }
 
   private void combineToCurrentTimeAndDims(RowPointer rowPointer)
@@ -235,10 +245,11 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
     int originalIteratorIndex = rowPointer.getIndexNum();
     indexesOfCurrentlyCombinedOriginalIterators.set(originalIteratorIndex);
     int rowNum = rowPointer.getRowNum();
-    if (minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] < 0) {
-      minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
-    }
-    maxCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
+    // if (minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] < 0) {
+    //   minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
+    // }
+    // maxCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex] = rowNum;
+    combinedRowNumsOfOriginalIteratorIndexs[originalIteratorIndex].add(rowNum);
 
     foldMetrics(rowPointer);
   }
@@ -279,21 +290,26 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
     return indexesOfCurrentlyCombinedOriginalIterators.nextSetBit(fromIndex);
   }
 
-  /**
-   * See Javadoc of {@link #minCurrentlyCombinedRowNumByOriginalIteratorIndex} for explanation.
-   */
-  int getMinCurrentlyCombinedRowNumByOriginalIteratorIndex(int originalIteratorIndex)
+  Iterator<Integer> getCurrentlyCombinedRowNumsByOriginalIteratorIndex(int originalIteratorIndex)
   {
-    return minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex];
+    return combinedRowNumsOfOriginalIteratorIndexs[originalIteratorIndex].iterator();
   }
 
   /**
-   * See Javadoc of {@link #minCurrentlyCombinedRowNumByOriginalIteratorIndex} for explanation.
+   * See Javadoc of {@link # minCurrentlyCombinedRowNumByOriginalIteratorIndex} for explanation.
    */
-  int getMaxCurrentlyCombinedRowNumByOriginalIteratorIndex(int originalIteratorIndex)
-  {
-    return maxCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex];
-  }
+  // int getMinCurrentlyCombinedRowNumByOriginalIteratorIndex(int originalIteratorIndex)
+  // {
+  //   return minCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex];
+  // }
+
+  /**
+   * See Javadoc of {@link # minCurrentlyCombinedRowNumByOriginalIteratorIndex} for explanation.
+   */
+  // int getMaxCurrentlyCombinedRowNumByOriginalIteratorIndex(int originalIteratorIndex)
+  // {
+  //   return maxCurrentlyCombinedRowNumByOriginalIteratorIndex[originalIteratorIndex];
+  // }
 
   @Override
   public void close()
