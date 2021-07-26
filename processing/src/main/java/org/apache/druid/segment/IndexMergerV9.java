@@ -563,6 +563,7 @@ public class IndexMergerV9 implements IndexMerger
         int[] arr = new int[adapter.getNumRows()];
         Arrays.fill(arr, INVALID_ROW);
         rowNumConversions.add(IntBuffer.wrap(arr));
+        System.out.println("adapter:" + adapter + "," + adapter.getNumRows());
       }
     }
 
@@ -603,11 +604,18 @@ public class IndexMergerV9 implements IndexMerger
               originalIteratorIndex);
           while (originalRowNums.hasNext()) {
             int rowNum = originalRowNums.next();
-            while (conversionBuffer.position() < rowNum) {
-              conversionBuffer.put(INVALID_ROW);
+            // while (conversionBuffer.position() < rowNum) {
+            //   conversionBuffer.put(INVALID_ROW);
+            // }
+            System.out.println(originalIteratorIndex + ": " + Arrays.toString(conversionBuffer.array())
+                               + ","
+                               + rowNum
+                               + ","
+                               + rowCount);
+            conversionBuffer.array()[rowNum] = rowCount;
+            if (originalIteratorIndex == 0 && rowNum == 1 && rowCount == 3) {
+              System.out.println("now...");
             }
-            System.out.println(rowNum + "," + rowCount);
-            conversionBuffer.put(rowNum, rowCount);
           }
 
         }

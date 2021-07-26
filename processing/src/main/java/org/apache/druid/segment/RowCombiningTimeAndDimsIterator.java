@@ -148,7 +148,9 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
     // Arrays.fill(minCurrentlyCombinedRowNumByOriginalIteratorIndex, MIN_CURRENTLY_COMBINED_ROW_NUM_UNSET_VALUE);
     // maxCurrentlyCombinedRowNumByOriginalIteratorIndex = new int[numCombinedIterators];
     combinedRowNumsOfOriginalIteratorIndexs = new RoaringBitmap[numCombinedIterators];
-    Arrays.fill(combinedRowNumsOfOriginalIteratorIndexs, new RoaringBitmap());
+    for (int i = 0; i < numCombinedIterators; i++) {
+      combinedRowNumsOfOriginalIteratorIndexs[i] = new RoaringBitmap();
+    }
 
     if (mergingIterator.moveToNext()) {
       nextRowPointer = mergingIterator.getPointer();

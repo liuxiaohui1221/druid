@@ -32,9 +32,13 @@ public class MegeTest
   public void testBuffer()
   {
     int[] arr = {1, 2, 3, 4};
+    Arrays.fill(arr, -1);
     IntBuffer wrap = IntBuffer.wrap(arr);
-    wrap.put(0, 10);
+    wrap.put(1, 11);
     System.out.println(Arrays.toString(wrap.array()));
+    wrap.array()[2] = 100;
+    System.out.println(Arrays.toString(wrap.array()));
+    wrap.put(111);
   }
 
   @Test
@@ -52,5 +56,19 @@ public class MegeTest
       System.out.println(iterator.next());
     }
 
+    RoaringBitmap[] combinedRowNumsOfOriginalIteratorIndexs = new RoaringBitmap[3];
+    for (int i = 0; i < 3; i++) {
+      combinedRowNumsOfOriginalIteratorIndexs[i] = new RoaringBitmap();
+    }
+    // combinedRowNumsOfOriginalIteratorIndexs[1] = new RoaringBitmap();
+    RoaringBitmap combinedRowNumsOfOriginalIteratorIndex = combinedRowNumsOfOriginalIteratorIndexs[1];
+    combinedRowNumsOfOriginalIteratorIndex.add(11);
+    System.out.println(Arrays.toString(combinedRowNumsOfOriginalIteratorIndexs));
+
+    combinedRowNumsOfOriginalIteratorIndex.clear();
+    combinedRowNumsOfOriginalIteratorIndex.add(1);
+    combinedRowNumsOfOriginalIteratorIndex.add(2);
+
+    System.out.println(Arrays.toString(combinedRowNumsOfOriginalIteratorIndexs));
   }
 }
