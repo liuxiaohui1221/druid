@@ -50,6 +50,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  */
@@ -59,6 +60,7 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
   private final QueryableIndex input;
   private final ImmutableList<String> availableDimensions;
   private final Metadata metadata;
+  private final List<String> targetDimensions;
 
   public QueryableIndexIndexableAdapter(QueryableIndex input)
   {
@@ -66,6 +68,16 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
     numRows = input.getNumRows();
     availableDimensions = ImmutableList.copyOf(input.getAvailableDimensions());
     this.metadata = input.getMetadata();
+    this.targetDimensions = null;
+  }
+
+  public QueryableIndexIndexableAdapter(QueryableIndex input, @Nullable List<String> targetDimensions)
+  {
+    this.input = input;
+    numRows = input.getNumRows();
+    availableDimensions = ImmutableList.copyOf(input.getAvailableDimensions());
+    this.metadata = input.getMetadata();
+    this.targetDimensions = targetDimensions;
   }
 
   @Override
@@ -180,59 +192,79 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
     private final Closer closer = Closer.create();
     private final Map<String, BaseColumn> columnCache = new HashMap<>();
 
-    private final SimpleAscendingOffset offset = new SimpleAscendingOffset(numRows);
     private final int maxValidOffset = numRows - 1;
 
-    private final ColumnValueSelector<?> offsetTimestampSelector;
-    private final ColumnValueSelector<?>[] offsetDimensionValueSelectors;
-    private final ColumnValueSelector<?>[] offsetMetricSelectors;
+    // private final ColumnValueSelector<?> offsetTimestampSelector;
+    // private final ColumnValueSelector<?>[] offsetDimensionValueSelectors;
+    // private final ColumnValueSelector<?>[] offsetMetricSelectors;
 
     private final SettableLongColumnValueSelector rowTimestampSelector = new SettableLongColumnValueSelector();
     private final SettableColumnValueSelector<?>[] rowDimensionValueSelectors;
     private final SettableColumnValueSelector<?>[] rowMetricSelectors;
-    private final RowPointer rowPointer;
+    private RowPointer rowPointer;
+    private final SimpleAscendingOffset offset = new SimpleAscendingOffset(numRows);
 
     private final SettableLongColumnValueSelector markedTimestampSelector = new SettableLongColumnValueSelector();
     private final SettableColumnValueSelector<?>[] markedDimensionValueSelectors;
     private final SettableColumnValueSelector<?>[] markedMetricSelectors;
     private final TimeAndDimsPointer markedRowPointer;
 
+    SimpleAscendingOffset offset1;
+    RowPointer rowPointer1;
+    SettableLongColumnValueSelector rowTimestampSelector1 = new SettableLongColumnValueSelector();
+    SettableColumnValueSelector<?>[] rowDimensionValueSelectors1;
+    SettableColumnValueSelector<?>[] rowMetricSelectors1;
+    ColumnValueSelector<?> offsetTimestampSelector1;
+    ColumnValueSelector<?>[] offsetDimensionValueSelectors1;
+    ColumnValueSelector<?>[] offsetMetricSelectors1;
+
+    SimpleAscendingOffset offset2;
+    long point2TimestampPrev = 0;
+    int offset2Start = numRows;
+    RowPointer rowPointer2;
+    SettableLongColumnValueSelector rowTimestampSelector2 = new SettableLongColumnValueSelector();
+    SettableColumnValueSelector<?>[] rowDimensionValueSelectors2;
+    SettableColumnValueSelector<?>[] rowMetricSelectors2;
+    ColumnValueSelector<?> offsetTimestampSelector2;
+    ColumnValueSelector<?>[] offsetDimensionValueSelectors2;
+    ColumnValueSelector<?>[] offsetMetricSelectors2;
     boolean first = true;
+    boolean isConsumedOffset1 = false;
+    boolean isConsumedOffset2 = false;
     int memoizedOffset = -1;
 
     RowIteratorImpl()
     {
-      final ColumnSelectorFactory columnSelectorFactory = new QueryableIndexColumnSelectorFactory(
-          input,
-          VirtualColumns.EMPTY,
-          false,
-          closer,
-          offset,
-          columnCache
-      );
+      // offsetTimestampSelector = columnSelectorFactory.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
 
-      offsetTimestampSelector = columnSelectorFactory.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+      final List<DimensionHandler> dimensionHandlers = new ArrayList<>(
+          input.getDimensionHandlers().values().stream()
+               .filter(dimensionHandler -> targetDimensions == null
+                                           || targetDimensions.contains(dimensionHandler.getDimensionName()))
+               .collect(Collectors.toList()));
 
-      final List<DimensionHandler> dimensionHandlers = new ArrayList<>(input.getDimensionHandlers().values());
-
-      offsetDimensionValueSelectors = dimensionHandlers
-          .stream()
-          .map(DimensionHandler::getDimensionName)
-          .map(columnSelectorFactory::makeColumnValueSelector)
-          .toArray(ColumnValueSelector[]::new);
+      // offsetDimensionValueSelectors = dimensionHandlers
+      //     .stream()
+      //     .map(DimensionHandler::getDimensionName)
+      //     .map(columnSelectorFactory::makeColumnValueSelector)
+      //     .toArray(ColumnValueSelector[]::new);
 
       List<String> metricNames = getMetricNames();
-      offsetMetricSelectors =
-          metricNames.stream().map(columnSelectorFactory::makeColumnValueSelector).toArray(ColumnValueSelector[]::new);
+      // offsetMetricSelectors =
+      //     metricNames.stream().map(columnSelectorFactory::makeColumnValueSelector).toArray(ColumnValueSelector[]::new);
 
       rowDimensionValueSelectors = dimensionHandlers
           .stream()
+          .filter(dimensionHandler -> targetDimensions == null
+                                      || targetDimensions.contains(dimensionHandler.getDimensionName()))
           .map(DimensionHandler::makeNewSettableEncodedValueSelector)
           .toArray(SettableColumnValueSelector[]::new);
       rowMetricSelectors = metricNames
           .stream()
           .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
           .toArray(SettableColumnValueSelector[]::new);
+      //多指针中获取最小：min(rowPointer,secondRowPointer)---小顶堆（max elements=60）。
+      offset1 = new SimpleAscendingOffset(numRows);
 
       rowPointer = new RowPointer(
           rowTimestampSelector,
@@ -240,8 +272,15 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
           dimensionHandlers,
           rowMetricSelectors,
           metricNames,
-          offset::getOffset
+          offset::getOffset,
+          targetDimensions == null
       );
+
+      initRowPointer1(dimensionHandlers, metricNames);
+      offset2 = new SimpleAscendingOffset(numRows);
+      if (targetDimensions != null) {
+        initRowPointer2(dimensionHandlers, metricNames);
+      }
 
       markedDimensionValueSelectors = dimensionHandlers
           .stream()
@@ -256,8 +295,123 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
           markedDimensionValueSelectors,
           dimensionHandlers,
           markedMetricSelectors,
-          metricNames
+          metricNames,
+          targetDimensions == null
       );
+    }
+
+    private void initRowPointer1(List<DimensionHandler> dimensionHandlers, List<String> metricNames)
+    {
+      final ColumnSelectorFactory columnSelectorFactory1 = new QueryableIndexColumnSelectorFactory(
+          input,
+          VirtualColumns.EMPTY,
+          false,
+          closer,
+          offset1,
+          columnCache
+      );
+      offsetTimestampSelector1 = columnSelectorFactory1.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+
+      offsetDimensionValueSelectors1 = dimensionHandlers
+          .stream()
+          .map(DimensionHandler::getDimensionName)
+          .map(columnSelectorFactory1::makeColumnValueSelector)
+          .toArray(ColumnValueSelector[]::new);
+
+      offsetMetricSelectors1 =
+          metricNames.stream()
+                     .map(columnSelectorFactory1::makeColumnValueSelector)
+                     .toArray(ColumnValueSelector[]::new);
+
+      rowDimensionValueSelectors1 = dimensionHandlers
+          .stream()
+          .filter(dimensionHandler -> targetDimensions == null
+                                      || targetDimensions.contains(dimensionHandler.getDimensionName()))
+          .map(DimensionHandler::makeNewSettableEncodedValueSelector)
+          .toArray(SettableColumnValueSelector[]::new);
+      rowMetricSelectors1 = metricNames
+          .stream()
+          .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
+          .toArray(SettableColumnValueSelector[]::new);
+
+      rowPointer1 = new RowPointer(
+          rowTimestampSelector1,
+          rowDimensionValueSelectors1,
+          dimensionHandlers,
+          rowMetricSelectors1,
+          metricNames,
+          offset1::getOffset,
+          targetDimensions == null
+      );
+      setRowPointerValues1();
+    }
+
+    private void initRowPointer2(List<DimensionHandler> dimensionHandlers, List<String> metricNames)
+    {
+      boolean isFirst = false;
+      long firstTime = 0L;
+      final ColumnSelectorFactory columnSelectorFactory2 = new QueryableIndexColumnSelectorFactory(
+          input,
+          VirtualColumns.EMPTY,
+          false,
+          closer,
+          offset2,
+          columnCache
+      );
+      for (; ; ) {
+        ColumnValueSelector offsetTimestampSelectorTemp = columnSelectorFactory2.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+        rowTimestampSelector2.setValue(offsetTimestampSelectorTemp.getLong());
+
+        if (!isFirst) {
+          isFirst = true;
+          firstTime = rowTimestampSelector2.getLong();
+        }
+
+        int timestampDiff = Long.compare(rowTimestampSelector2.getLong(), firstTime);
+        if (timestampDiff != 0) {
+          offsetTimestampSelector2 = columnSelectorFactory2.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+
+          offsetDimensionValueSelectors2 = dimensionHandlers
+              .stream()
+              .map(DimensionHandler::getDimensionName)
+              .map(columnSelectorFactory2::makeColumnValueSelector)
+              .toArray(ColumnValueSelector[]::new);
+
+          offsetMetricSelectors2 =
+              metricNames.stream()
+                         .map(columnSelectorFactory2::makeColumnValueSelector)
+                         .toArray(ColumnValueSelector[]::new);
+
+          rowDimensionValueSelectors2 = dimensionHandlers
+              .stream()
+              .filter(dimensionHandler -> targetDimensions == null
+                                          || targetDimensions.contains(dimensionHandler.getDimensionName()))
+              .map(DimensionHandler::makeNewSettableEncodedValueSelector)
+              .toArray(SettableColumnValueSelector[]::new);
+          rowMetricSelectors2 = metricNames
+              .stream()
+              .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
+              .toArray(SettableColumnValueSelector[]::new);
+
+          rowPointer2 = new RowPointer(
+              rowTimestampSelector2,
+              rowDimensionValueSelectors2,
+              dimensionHandlers,
+              rowMetricSelectors2,
+              metricNames,
+              offset2::getOffset,
+              targetDimensions == null
+          );
+          setRowPointerValues2();
+          offset2Start = offset2.getOffset();
+          point2TimestampPrev = rowPointer2.getTimestamp();
+          break;
+        }
+        offset2.increment();
+        if (!offset2.withinBounds()) {
+          break;
+        }
+      }
     }
 
     @Override
@@ -292,34 +446,142 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
     @Override
     public boolean moveToNext()
     {
-      if (first) {
-        first = false;
-        if (offset.withinBounds()) {
-          setRowPointerValues();
-          return true;
+      if (targetDimensions != null) {
+        if (first) {
+          first = false;
+          if (offset1.withinBounds()) {
+            setRowPointerValues1(); // pointer1设置新offset1执行的行。
+            setRowPointerValuesFromPointer1();
+            isConsumedOffset1 = true;
+            return true;
+          } else {
+            return false;
+          }
         } else {
-          return false;
+
+          //若当前有没消费的且未达到边界则移动指针，使得两个指针都是未消费状态，则继续比较大小
+          if (isConsumedOffset1 == true && offset1.getOffset() < offset2Start) {
+            offset1.increment();
+            if (offset1.withinBounds()) {
+              setRowPointerValues1();
+            }
+          }
+          if (isConsumedOffset2 == true
+              && rowPointer2.getTimestamp() == point2TimestampPrev
+              && offset2.withinBounds()) {
+            offset2.increment();
+            if (offset2.withinBounds()) {
+              setRowPointerValues2();
+            }
+          }
+
+          if (offset1.getOffset() == offset2Start && !offset2.withinBounds()) {
+            return false;
+          }
+          boolean point1ReachBorder = offset1.getOffset() == offset2Start || !offset1.withinBounds();
+          boolean point2ReachBorder = rowPointer2.getTimestamp() != point2TimestampPrev || !offset2.withinBounds();
+          if (point1ReachBorder && point2ReachBorder) {
+            offset1.setCurrentOffset(offset2.getOffset());
+            setRowPointerValues1();
+            //查找offset2下个起始位置
+            offset2Start = offset2.getOffset();
+            point2TimestampPrev = rowPointer2.getTimestamp();
+            initRowPointer2(rowPointer2.getDimensionHandlers(), rowPointer2.getMetricNames());
+          }
+
+          if (point1ReachBorder && !point2ReachBorder) {
+            setRowPointerValuesFromPointer2();
+            isConsumedOffset2 = true;
+            return true;
+          } else if (!point1ReachBorder && point2ReachBorder) {
+            setRowPointerValuesFromPointer1();
+            isConsumedOffset1 = true;
+            return true;
+          } else {
+            //offset1,offset2中取最小指针（时间+维度比较）
+            int rowCompare = rowPointer1.compareTo(rowPointer2);
+            if (rowCompare <= 0) { // 赋值较指针的selector到rowPointer
+              setRowPointerValuesFromPointer1();
+              isConsumedOffset1 = true;
+              isConsumedOffset2 = false;
+              return true;
+            } else {
+              setRowPointerValuesFromPointer2();
+              isConsumedOffset1 = false;
+              isConsumedOffset2 = true;
+              return true;
+            }
+          }
         }
       } else {
-        if (offset.getOffset() < maxValidOffset) {
-          offset.increment();
-          setRowPointerValues();
-          return true;
+        if (first) {
+          first = false;
+          if (offset1.withinBounds()) {
+            setRowPointerValues1(); // pointer1设置新offset1执行的行。
+            setRowPointerValuesFromPointer1();
+            return true;
+          } else {
+            return false;
+          }
         } else {
-          // Don't update rowPointer's values here, to conform to the RowIterator.getPointer() specification.
-          return false;
+          if (offset1.getOffset() < maxValidOffset) {
+            offset1.increment();
+            setRowPointerValues1(); // pointer1设置新offset1执行的行。
+            setRowPointerValuesFromPointer1();
+            return true;
+          } else {
+            // Don't update rowPointer's values here, to conform to the RowIterator.getPointer() specification.
+            return false;
+          }
         }
       }
     }
 
-    private void setRowPointerValues()
+    private void setRowPointerValuesFromPointer1()
     {
-      rowTimestampSelector.setValue(offsetTimestampSelector.getLong());
-      for (int i = 0; i < offsetDimensionValueSelectors.length; i++) {
-        rowDimensionValueSelectors[i].setValueFrom(offsetDimensionValueSelectors[i]);
+      // rowPointer.setIndexNum(rowPointer1.getIndexNum());
+      offset.setCurrentOffset(offset1.getOffset());
+      rowTimestampSelector.setValue(rowTimestampSelector1.getLong());
+      for (int i = 0; i < rowDimensionValueSelectors1.length; i++) {
+        rowDimensionValueSelectors[i].setValueFrom(rowDimensionValueSelectors1[i]);
       }
-      for (int i = 0; i < offsetMetricSelectors.length; i++) {
-        rowMetricSelectors[i].setValueFrom(offsetMetricSelectors[i]);
+      for (int i = 0; i < rowMetricSelectors1.length; i++) {
+        rowMetricSelectors[i].setValueFrom(rowMetricSelectors1[i]);
+      }
+    }
+
+    private void setRowPointerValuesFromPointer2()
+    {
+      // rowPointer.setIndexNum(rowPointer2.getIndexNum());
+      offset.setCurrentOffset(offset2.getOffset());
+      rowTimestampSelector.setValue(rowTimestampSelector2.getLong());
+      for (int i = 0; i < rowDimensionValueSelectors2.length; i++) {
+        rowDimensionValueSelectors[i].setValueFrom(rowDimensionValueSelectors2[i]);
+      }
+      for (int i = 0; i < rowMetricSelectors2.length; i++) {
+        rowMetricSelectors[i].setValueFrom(rowMetricSelectors2[i]);
+      }
+    }
+
+    private void setRowPointerValues1()
+    {
+      rowTimestampSelector1.setValue(offsetTimestampSelector1.getLong());
+      for (int i = 0; i < offsetDimensionValueSelectors1.length; i++) {
+        rowDimensionValueSelectors1[i].setValueFrom(offsetDimensionValueSelectors1[i]);
+      }
+      for (int i = 0; i < offsetMetricSelectors1.length; i++) {
+        rowMetricSelectors1[i].setValueFrom(offsetMetricSelectors1[i]);
+      }
+    }
+
+    private void setRowPointerValues2()
+    {
+      rowTimestampSelector2.setValue(offsetTimestampSelector2.getLong());
+      for (int i = 0; i < offsetDimensionValueSelectors2.length; i++) {
+        rowDimensionValueSelectors2[i].setValueFrom(offsetDimensionValueSelectors2[i]);
+      }
+      for (int i = 0; i < offsetMetricSelectors2.length; i++) {
+        rowMetricSelectors2[i].setValueFrom(offsetMetricSelectors2[i]);
       }
     }
 
@@ -340,13 +602,13 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
      */
     void memoizeOffset()
     {
-      memoizedOffset = offset.getOffset();
+      memoizedOffset = offset1.getOffset();
     }
 
     void resetToMemoizedOffset()
     {
-      offset.setCurrentOffset(memoizedOffset);
-      setRowPointerValues();
+      offset1.setCurrentOffset(memoizedOffset);
+      setRowPointerValues1();
     }
   }
 

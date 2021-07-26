@@ -66,6 +66,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
   private final Comparator<ColumnValueSelector>[] dimensionSelectorComparators;
   final ColumnValueSelector[] metricSelectors;
   private final List<String> metricNames;
+  private final boolean compareTime;
 
   /**
    * TimeAndDimsPointer constructor intentionally takes dimensionSelectors and metricSelectors as arrays and doesn't
@@ -79,7 +80,8 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
       ColumnValueSelector[] dimensionSelectors,
       List<DimensionHandler> dimensionHandlers,
       ColumnValueSelector[] metricSelectors,
-      List<String> metricNames
+      List<String> metricNames,
+      boolean compareTime
   )
   {
     this.timestampSelector = timestampSelector;
@@ -94,6 +96,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
     Preconditions.checkArgument(metricSelectors.length == metricNames.size());
     this.metricSelectors = metricSelectors;
     this.metricNames = metricNames;
+    this.compareTime = compareTime;
   }
 
   public long getTimestamp()
@@ -138,7 +141,8 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
         newDimensionSelectors,
         dimensionHandlers,
         metricSelectors,
-        getMetricNames()
+        getMetricNames(),
+        compareTime
     );
   }
 
@@ -151,7 +155,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
     long timestamp = getTimestamp();
     long rhsTimestamp = rhs.getTimestamp();
     int timestampDiff = Long.compare(timestamp, rhsTimestamp);
-    if (timestampDiff != 0) {
+    if (compareTime && timestampDiff != 0) {
       return timestampDiff;
     }
     for (int dimIndex = 0; dimIndex < dimensionSelectors.length; dimIndex++) {

@@ -48,7 +48,21 @@ public final class RowPointer extends TimeAndDimsPointer
       IntSupplier rowNumPointer
   )
   {
-    super(timestampSelector, dimensionSelectors, dimensionHandlers, metricSelectors, metricNames);
+    super(timestampSelector, dimensionSelectors, dimensionHandlers, metricSelectors, metricNames, true);
+    this.rowNumPointer = rowNumPointer;
+  }
+
+  public RowPointer(
+      ColumnValueSelector timestampSelector,
+      ColumnValueSelector[] dimensionSelectors,
+      List<DimensionHandler> dimensionHandlers,
+      ColumnValueSelector[] metricSelectors,
+      List<String> metricNames,
+      IntSupplier rowNumPointer,
+      boolean compareTime
+  )
+  {
+    super(timestampSelector, dimensionSelectors, dimensionHandlers, metricSelectors, metricNames, compareTime);
     this.rowNumPointer = rowNumPointer;
   }
 

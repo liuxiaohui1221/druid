@@ -875,13 +875,15 @@ public class IndexMergerV9 implements IndexMerger
         //                     In this case, true/false won't cause reOrdering in merge stage
         //                     while merging a single iterable
         false,
+        null,
         index.getMetricAggs(),
         null,
         outDir,
         indexSpec,
         progress,
         segmentWriteOutMediumFactory,
-        -1
+        -1,
+        false
     );
   }
 
@@ -937,6 +939,33 @@ public class IndexMergerV9 implements IndexMerger
   public File mergeQueryableIndex(
       List<QueryableIndex> indexes,
       boolean rollup,
+      final List<String> targetDimensions,
+      final AggregatorFactory[] metricAggs,
+      File outDir,
+      IndexSpec indexSpec,
+      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      int maxColumnsToMerge,
+      final boolean materializedMerge
+  ) throws IOException
+  {
+    return mergeQueryableIndex(
+        indexes,
+        rollup,
+        targetDimensions,
+        metricAggs,
+        outDir,
+        indexSpec,
+        new BaseProgressIndicator(),
+        segmentWriteOutMediumFactory,
+        maxColumnsToMerge,
+        materializedMerge
+    );
+  }
+
+  @Override
+  public File mergeQueryableIndex(
+      List<QueryableIndex> indexes,
+      boolean rollup,
       final AggregatorFactory[] metricAggs,
       @Nullable DimensionsSpec dimensionsSpec,
       File outDir,
@@ -947,8 +976,9 @@ public class IndexMergerV9 implements IndexMerger
   ) throws IOException
   {
     return multiphaseMerge(
-        IndexMerger.toIndexableAdapters(indexes),
+        IndexMerger.toIndexableAdapters(indexes, null),
         rollup,
+        null,
         metricAggs,
         dimensionsSpec,
         outDir,
@@ -969,19 +999,24 @@ public class IndexMergerV9 implements IndexMerger
       int maxColumnsToMerge
   ) throws IOException
   {
-    return multiphaseMerge(indexes, rollup, metricAggs, null, outDir, indexSpec, new BaseProgressIndicator(), null, maxColumnsToMerge);
+    // return multiphaseMerge(indexes, rollup, metricAggs, null, outDir, indexSpec, new BaseProgressIndicator(), null, maxColumnsToMerge);
+    return multiphaseMerge(indexes, rollup, null, metricAggs, outDir, indexSpec,
+                           new BaseProgressIndicator(), null, maxColumnsToMerge, false
+    );
   }
 
   private File multiphaseMerge(
       List<IndexableAdapter> indexes,
       final boolean rollup,
+      final List<String> targetDimensions,
       final AggregatorFactory[] metricAggs,
       @Nullable DimensionsSpec dimensionsSpec,
       File outDir,
       IndexSpec indexSpec,
       ProgressIndicator progress,
       @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
-      int maxColumnsToMerge
+      int maxColumnsToMerge,
+      final boolean materializedMerge
   ) throws IOException
   {
     FileUtils.deleteDirectory(outDir);
@@ -993,12 +1028,14 @@ public class IndexMergerV9 implements IndexMerger
       return merge(
           indexes,
           rollup,
+          targetDimensions,
           metricAggs,
           dimensionsSpec,
           outDir,
           indexSpec,
           progress,
-          segmentWriteOutMediumFactory
+          segmentWriteOutMediumFactory,
+          materializedMerge
       );
     }
 
@@ -1027,12 +1064,14 @@ public class IndexMergerV9 implements IndexMerger
           File phaseOutput = merge(
               phase,
               rollup,
+              targetDimensions,
               metricAggs,
               dimensionsSpec,
               phaseOutDir,
               indexSpec,
               progress,
-              segmentWriteOutMediumFactory
+              segmentWriteOutMediumFactory,
+              materializedMerge
           );
           currentOutputs.add(phaseOutput);
         }
@@ -1118,15 +1157,23 @@ public class IndexMergerV9 implements IndexMerger
   private File merge(
       List<IndexableAdapter> indexes,
       final boolean rollup,
+      final List<String> targetDimensions,
       final AggregatorFactory[] metricAggs,
       @Nullable DimensionsSpec dimensionsSpec,
       File outDir,
       IndexSpec indexSpec,
       ProgressIndicator progress,
-      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory
+      @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
+      final boolean materializedMerge
   ) throws IOException
   {
-    final List<String> mergedDimensions = IndexMerger.getMergedDimensions(indexes, dimensionsSpec);
+    List<String> mergedDimensions = IndexMerger.getMergedDimensions(indexes, dimensionsSpec);
+    if (materializedMerge) {
+      //是否包含targetDimensions，包含则使用targetDimensions
+      if (mergedDimensions.containsAll(targetDimensions)) {
+        mergedDimensions = targetDimensions;
+      }
+    }
 
     final List<String> mergedMetrics = IndexMerger.mergeIndexed(
         indexes.stream().map(IndexableAdapter::getMetricNames).collect(Collectors.toList())
