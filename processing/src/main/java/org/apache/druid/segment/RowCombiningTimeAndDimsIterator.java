@@ -152,7 +152,11 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
       combinedRowNumsOfOriginalIteratorIndexs[i] = new RoaringBitmap();
     }
 
+    // mergingIterator.moveToNext内部拥有最小维度指针的indexer对象head迭代器先mark，再移动moveToNext。
+    // mark方法通过head中的当前pointer记录到markdPointer，
+    // 也即通过markedRowPointersOfOriginalIterators传递给了combinedRowNumsOfOriginalIteratorIndexs
     if (mergingIterator.moveToNext()) {
+      //最小维度行指针。
       nextRowPointer = mergingIterator.getPointer();
     }
   }
@@ -181,7 +185,7 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
   public boolean moveToNext()
   {
     clearCombinedRowsInfo();
-    if (nextRowPointer == null) {
+    if (nextRowPointer == null) { //不存在下一分组行，则迭代全部完成直接返回
       currentTimeAndDimsPointer = null;
       return false;
     }
@@ -191,13 +195,15 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
     startNewTimeAndDims(nextRowPointer);
     nextRowPointer = null;
     // [1] -- see comment in startNewTimeAndDims()
-    mergingIterator.mark();
+    mergingIterator.mark(); //重置开始新分组行的mark标记：
+    // 使得第一次调用mergingIterator.moveToNext中奖新分组head.mark方式赋值给
+    //combinedTimeAndDimsPointersByOriginalIteratorIndex，再传递给currentTimeAndDimsPointer
     // [2] -- see comment in startNewTimeAndDims()
     while (mergingIterator.moveToNext()) {
       if (mergingIterator.hasTimeAndDimsChangedSinceMark()) {
         nextRowPointer = mergingIterator.getPointer(); // [*]
-        return true;
-      } else {
+        return true; //产生新分组，记录到nextRowPointer中，以备下次迭代
+      } else { //聚合到当前分组中
         combineToCurrentTimeAndDims(mergingIterator.getPointer());
       }
     }
@@ -235,10 +241,13 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
   private void combineToCurrentTimeAndDims(RowPointer rowPointer)
   {
     int soleCurrentPointSourceOriginalIteratorIndex = this.soleCurrentPointSourceOriginalIteratorIndex;
-    if (soleCurrentPointSourceOriginalIteratorIndex >= 0) {
+    if (soleCurrentPointSourceOriginalIteratorIndex >= 0) { //startNewTimeAndDim后， 还没开始新分组的combine
       TimeAndDimsPointer currentRowPointer = this.currentTimeAndDimsPointer;
       assert currentRowPointer != null;
       resetCombinedMetrics(currentRowPointer);
+      /**
+       * 初始化指标，维度，默认维度为第一个marked的分组: RowIteratorImpl.markedPointer
+       * */
       currentTimeAndDimsPointer =
           combinedTimeAndDimsPointersByOriginalIteratorIndex[soleCurrentPointSourceOriginalIteratorIndex];
       this.soleCurrentPointSourceOriginalIteratorIndex = -1;

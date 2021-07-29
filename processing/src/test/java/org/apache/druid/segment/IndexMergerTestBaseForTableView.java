@@ -137,7 +137,7 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
   }
 
 
-  // @Test
+  @Test
   public void testNonLexicographicDimOrderMerge() throws Exception
   {
     // IncrementalIndex toPersist1 = getIndexD3();
@@ -203,7 +203,7 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
 
   }
 
-  @Test
+  // @Test
   public void testMaxColumnsToMerge() throws Exception
   {
     IncrementalIndexSchema indexSchema = new IncrementalIndexSchema.Builder()
@@ -826,6 +826,29 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
             ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
         )
     );
+    toPersist1.add(
+        new MapBasedInputRow(
+            2,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
+        )
+    );
+
+    toPersist1.add(
+        new MapBasedInputRow(
+            1,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
+        )
+    );
+    toPersist1.add(
+        new MapBasedInputRow(
+            1,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50001", "sum", 100)
+        )
+    );
+
     toPersist1.add(
         new MapBasedInputRow(
             2,

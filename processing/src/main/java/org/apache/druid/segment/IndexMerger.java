@@ -39,6 +39,7 @@ import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.segment.data.Indexed;
 import org.apache.druid.segment.incremental.IncrementalIndex;
 import org.apache.druid.segment.writeout.SegmentWriteOutMediumFactory;
+import org.apache.druid.utils.CollectionUtils;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
@@ -71,7 +72,7 @@ public interface IndexMerger
       @Nullable DimensionsSpec dimensionsSpec
   )
   {
-    return getMergedDimensions(toIndexableAdapters(indexes), dimensionsSpec);
+    return getMergedDimensions(toIndexableAdapters(indexes, null), dimensionsSpec);
   }
 
   static List<IndexableAdapter> toIndexableAdapters(List<QueryableIndex> indexes, List<String> targetDimensions)
