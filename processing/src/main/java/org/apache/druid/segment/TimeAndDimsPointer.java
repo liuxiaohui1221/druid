@@ -21,8 +21,10 @@ package org.apache.druid.segment;
 
 import com.google.common.base.Preconditions;
 import org.apache.druid.java.util.common.DateTimes;
+import org.apache.druid.java.util.common.granularity.Granularity;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -66,7 +68,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
   private final Comparator<ColumnValueSelector>[] dimensionSelectorComparators;
   final ColumnValueSelector[] metricSelectors;
   private final List<String> metricNames;
-  private final boolean compareTime;
+  private final Granularity compareTimeGran;
 
   /**
    * TimeAndDimsPointer constructor intentionally takes dimensionSelectors and metricSelectors as arrays and doesn't
@@ -81,7 +83,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
       List<DimensionHandler> dimensionHandlers,
       ColumnValueSelector[] metricSelectors,
       List<String> metricNames,
-      boolean compareTime
+      @Nullable Granularity compareTimeGran
   )
   {
     this.timestampSelector = timestampSelector;
@@ -96,7 +98,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
     Preconditions.checkArgument(metricSelectors.length == metricNames.size());
     this.metricSelectors = metricSelectors;
     this.metricNames = metricNames;
-    this.compareTime = compareTime;
+    this.compareTimeGran = compareTimeGran;
   }
 
   public long getTimestamp()
@@ -142,7 +144,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
         dimensionHandlers,
         metricSelectors,
         getMetricNames(),
-        compareTime
+        compareTimeGran
     );
   }
 
@@ -154,8 +156,12 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
   {
     long timestamp = getTimestamp();
     long rhsTimestamp = rhs.getTimestamp();
+    if (compareTimeGran != null) {
+      timestamp = compareTimeGran.bucketStart(timestamp);
+      rhsTimestamp = compareTimeGran.bucketStart(rhsTimestamp);
+    }
     int timestampDiff = Long.compare(timestamp, rhsTimestamp);
-    if (compareTime && timestampDiff != 0) {
+    if (timestampDiff != 0) {
       return timestampDiff;
     }
     for (int dimIndex = 0; dimIndex < dimensionSelectors.length; dimIndex++) {

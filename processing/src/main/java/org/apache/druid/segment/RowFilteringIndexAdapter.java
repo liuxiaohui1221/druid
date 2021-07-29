@@ -73,7 +73,7 @@ public class RowFilteringIndexAdapter implements IndexableAdapter
   @Override
   public TransformableRowIterator getRows()
   {
-    QueryableIndexIndexableAdapter.RowIteratorImpl baseRowIterator = baseAdapter.getRows();
+    RowIteratorImpl baseRowIterator = baseAdapter.getRows();
     return new ForwardingRowIterator(baseRowIterator)
     {
       /**
