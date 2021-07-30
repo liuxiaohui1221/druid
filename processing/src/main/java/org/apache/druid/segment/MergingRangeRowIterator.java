@@ -26,21 +26,15 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.IntStream;
 
 /**
- * MergingRowIterator sort-merges rows of several {@link RowIterator}s, assuming that each of them is already sorted
- * (i. e. as {@link RowIterator#moveToNext()} is called, the pointer returned from {@link RowIterator#getPointer()} is
+ * MergingRangeRowIterator sort-merges rows of several {@link RangeRowIteratorImpl}s, assuming that each of them is already sorted
+ * (i. e. as {@link RangeRowIteratorImpl#moveToNext()} is called, the pointer returned from {@link RangeRowIteratorImpl#getPointer()} is
  * "greater" than the previous, in terms of {@link TimeAndDimsPointer#compareTo}). Equivalent points from different
  * input iterators are _not_ deduplicated.
  *
- * Conceptually MergingRowIterator is an equivalent to {@link com.google.common.collect.Iterators#mergeSorted}, but for
- * {@link RowIterator}s rather than simple {@link java.util.Iterator}s.
- *
- * Implementation detail: this class uses binary heap priority queue algorithm to sort pointers, but it also memoizes
- * and keeps some extra info along the heap slots (see javadoc of {@link #equalToChild} field), that is essential for
- * impelementing {@link #hasTimeAndDimsChangedSinceMark()}, while {@link TransformableRowIterator#getPointer()} of the
- * input iterators are mutable pointers, and you cannot "look back" to compare with some past point.
+ * Conceptually MergingRangeRowIterator is an equivalent to {@link com.google.common.collect.Iterators#mergeSorted}, but for
+ * {@link RangeRowIteratorImpl}s rather than simple {@link java.util.Iterator}s.
  */
 final class MergingRangeRowIterator implements RowIterator
 {
@@ -50,20 +44,7 @@ final class MergingRangeRowIterator implements RowIterator
   /** Used to close {@link #originalIterators} */
   private final Closer closer = Closer.create();
 
-  private final TransformableRowIterator[] originalIterators;
-
-  /** Binary heap (priority queue) */
-  private final RowIterator[] pQueue;
-  private int pQueueSize;
-
-  /**
-   * Boolean flags corresponding to the elements of {@link #pQueue} binary heap, signifying if the element is equal
-   * to one or both children in the binary heap. For leaf elements (i. e. no children), the value should be false.
-   */
-  private final boolean[] equalToChild;
-
-  /** true while {@link #moveToNext()} is not called yet. */
-  private boolean first = true;
+  private final RangeRowIteratorImpl[] originalIterators;
 
   /**
    * True by default, so that if {@link #mark()} is never called, the extra work to compute the value for this field is
@@ -75,22 +56,10 @@ final class MergingRangeRowIterator implements RowIterator
   @Nullable
   private RowIterator lastMarkedHead = null;
 
-  MergingRangeRowIterator(List<TransformableRowIterator> iterators)
+  MergingRangeRowIterator(List<RangeRowIteratorImpl> iterators)
   {
     iterators.forEach(closer::register);
-    originalIterators = new TransformableRowIterator[iterators.size()];
-    pQueue = IntStream
-        .range(0, iterators.size())
-        .filter(indexNum -> iterators.get(indexNum).moveToNext())
-        .mapToObj(indexNum -> {
-          TransformableRowIterator rowIterator = iterators.get(indexNum);
-          // Can call rowIterator.getPointer() only here, after moveToNext() returned true on the filter() step
-          rowIterator.getPointer().setIndexNum(indexNum);
-          originalIterators[indexNum] = rowIterator;
-          return rowIterator;
-        })
-        .toArray(RowIterator[]::new);
-    equalToChild = new boolean[pQueue.length];
+    originalIterators = new RangeRowIteratorImpl[iterators.size()];
     heapify();
     initEqualToChildStates();
   }
