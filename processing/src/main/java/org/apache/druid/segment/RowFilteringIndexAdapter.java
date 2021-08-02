@@ -73,7 +73,7 @@ public class RowFilteringIndexAdapter implements IndexableAdapter
   @Override
   public TransformableRowIterator getRows()
   {
-    RowIteratorImpl baseRowIterator = baseAdapter.getRows();
+    final TransformableRowIterator baseRowIterator = baseAdapter.getRows();
     return new ForwardingRowIterator(baseRowIterator)
     {
       /**
@@ -84,18 +84,25 @@ public class RowFilteringIndexAdapter implements IndexableAdapter
       @Override
       public boolean moveToNext()
       {
-        while (baseRowIterator.moveToNext()) {
-          if (filter.test(baseRowIterator.getPointer())) {
-            baseRowIterator.memoizeOffset();
-            memoizedOffset = true;
-            return true;
+        if (baseRowIterator instanceof RowIteratorImpl) {
+          RowIteratorImpl tempBaseRowIterator = (RowIteratorImpl) baseRowIterator;
+          while (tempBaseRowIterator.moveToNext()) {
+            if (filter.test(tempBaseRowIterator.getPointer())) {
+              tempBaseRowIterator.memoizeOffset();
+              memoizedOffset = true;
+              return true;
+            }
           }
+          // Setting back to the last valid offset in this iterator, as required by RowIterator.getPointer() spec.
+          if (memoizedOffset) {
+            tempBaseRowIterator.resetToMemoizedOffset();
+          }
+          return false;
+        } else {
+          final boolean b = baseRowIterator.moveToNext();
+          baseRowIterator.mark();
+          return b;
         }
-        // Setting back to the last valid offset in this iterator, as required by RowIterator.getPointer() spec.
-        if (memoizedOffset) {
-          baseRowIterator.resetToMemoizedOffset();
-        }
-        return false;
       }
     };
   }

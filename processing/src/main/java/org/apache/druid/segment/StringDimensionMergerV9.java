@@ -95,7 +95,7 @@ public class StringDimensionMergerV9 implements DimensionMergerV9
   @Nullable
   private ByteBufferWriter<ImmutableRTree> spatialWriter;
   @Nullable
-  private ArrayList<IntBuffer> dimConversions; // dimConversions用于记录哪些indexer得维度字典需要做转换。
+  private ArrayList<IntBuffer> dimConversions; // dimConversions用于记录indexer维度字典做了重新编码，下标为原始编号，内容counter为去重后的重新编码值
   @Nullable
   private List<IndexableAdapter> adapters;
   @Nullable

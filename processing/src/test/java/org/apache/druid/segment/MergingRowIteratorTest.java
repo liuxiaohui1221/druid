@@ -177,7 +177,7 @@ public class MergingRowIteratorTest
           Collections.emptyList(),
           ColumnValueSelector.EMPTY_ARRAY,
           Collections.emptyList(),
-          true
+          null
       );
     }
 

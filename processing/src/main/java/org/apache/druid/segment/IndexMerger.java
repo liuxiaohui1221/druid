@@ -32,6 +32,7 @@ import org.apache.druid.data.input.impl.DimensionsSpec;
 import org.apache.druid.java.util.common.ByteBufferUtils;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Comparators;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.common.parsers.CloseableIterator;
@@ -72,13 +73,13 @@ public interface IndexMerger
       @Nullable DimensionsSpec dimensionsSpec
   )
   {
-    return getMergedDimensions(toIndexableAdapters(indexes, null), dimensionsSpec);
+    return getMergedDimensions(toIndexableAdapters(indexes, null, null), dimensionsSpec);
   }
 
-  static List<IndexableAdapter> toIndexableAdapters(List<QueryableIndex> indexes, List<String> targetDimensions)
+  static List<IndexableAdapter> toIndexableAdapters(List<QueryableIndex> indexes, List<String> targetDimensions, @Nullable Granularity granularity)
   {
     return indexes.stream()
-                  .map(index -> new QueryableIndexIndexableAdapter(index, targetDimensions))
+        .map(index -> new QueryableIndexIndexableAdapter(index, targetDimensions, granularity))
                   .collect(Collectors.toList());
   }
 
@@ -250,6 +251,7 @@ public interface IndexMerger
       int maxColumnsToMerge
   ) throws IOException;
 
+  //merge
   File mergeQueryableIndex(
       List<QueryableIndex> indexes,
       boolean rollup,
@@ -283,7 +285,8 @@ public interface IndexMerger
       IndexSpec indexSpec,
       @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
       int maxColumnsToMerge,
-      boolean materializedMerge
+      boolean materializedMerge,
+      Granularity granularity
   ) throws IOException;
 
   File mergeQueryableIndex(
@@ -296,7 +299,8 @@ public interface IndexMerger
       ProgressIndicator progress,
       @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
       int maxColumnsToMerge,
-      boolean materializedMerge
+      boolean materializedMerge,
+      Granularity granularity
   ) throws IOException;
 
   @VisibleForTesting
@@ -318,7 +322,8 @@ public interface IndexMerger
       File outDir,
       IndexSpec indexSpec,
       int maxColumnsToMerge,
-      boolean materializedMerge
+      boolean materializedMerge,
+      Granularity granularity
   ) throws IOException;
 
   // Faster than IndexMaker

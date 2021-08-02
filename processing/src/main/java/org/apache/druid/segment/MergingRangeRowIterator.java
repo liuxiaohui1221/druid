@@ -26,6 +26,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.IntStream;
 
 /**
  * MergingRangeRowIterator sort-merges rows of several {@link RangeRowIteratorImpl}s, assuming that each of them is already sorted
@@ -36,7 +37,7 @@ import java.util.List;
  * Conceptually MergingRangeRowIterator is an equivalent to {@link com.google.common.collect.Iterators#mergeSorted}, but for
  * {@link RangeRowIteratorImpl}s rather than simple {@link java.util.Iterator}s.
  */
-final class MergingRangeRowIterator implements RowIterator
+final class MergingRangeRowIterator implements TransformableRowIterator
 {
   private static final Comparator<RowIterator> ROW_ITERATOR_COMPARATOR =
       Comparator.comparing(RowIterator::getPointer);
@@ -45,6 +46,23 @@ final class MergingRangeRowIterator implements RowIterator
   private final Closer closer = Closer.create();
 
   private final RangeRowIteratorImpl[] originalIterators;
+
+  /**
+   * Binary heap (priority queue)
+   */
+  private final RangeRowIteratorImpl[] pQueue;
+  private int pQueueSize;
+
+  /**
+   * Boolean flags corresponding to the elements of {@link #pQueue} binary heap, signifying if the element is equal
+   * to one or both children in the binary heap. For leaf elements (i. e. no children), the value should be false.
+   */
+  private final boolean[] equalToChild;
+
+  /**
+   * true while {@link #moveToNext()} is not called yet.
+   */
+  private boolean first = true;
 
   /**
    * True by default, so that if {@link #mark()} is never called, the extra work to compute the value for this field is
@@ -60,6 +78,19 @@ final class MergingRangeRowIterator implements RowIterator
   {
     iterators.forEach(closer::register);
     originalIterators = new RangeRowIteratorImpl[iterators.size()];
+    pQueue = IntStream
+        .range(0, iterators.size())
+        .filter(indexNum -> iterators.get(indexNum).moveToNext())
+        .mapToObj(indexNum -> {
+          RangeRowIteratorImpl rowIterator = iterators.get(indexNum);
+          // Can call rowIterator.getPointer() only here, after moveToNext() returned true on the filter() step
+          rowIterator.getPointer().setIndexNum(indexNum);
+          // rowIterator.mark();
+          originalIterators[indexNum] = rowIterator;
+          return rowIterator;
+        })
+        .toArray(RangeRowIteratorImpl[]::new);
+    equalToChild = new boolean[pQueue.length];
     heapify();
     initEqualToChildStates();
   }
@@ -75,6 +106,12 @@ final class MergingRangeRowIterator implements RowIterator
   {
     // Current MergingRowIterator's pointer is the pointer of the head of the priority queue.
     return pQueue[0].getPointer();
+  }
+
+  @Override
+  public TimeAndDimsPointer getMarkedPointer()
+  {
+    return pQueue[0].getMarkedPointer();
   }
 
   @Override
@@ -146,6 +183,7 @@ final class MergingRangeRowIterator implements RowIterator
   @Override
   public void mark()
   {
+    pQueue[0].mark();
     changedSinceMark = false;
     lastMarkedHead = null;
   }
@@ -165,20 +203,20 @@ final class MergingRangeRowIterator implements RowIterator
    */
   private int sinkHeap(int i)
   {
-    final RowIterator iteratorToSink = pQueue[i];
+    final RangeRowIteratorImpl iteratorToSink = pQueue[i];
     while (true) {
       int left = (i << 1) + 1;
       if (left >= pQueueSize) {
         break;
       }
       int child = left;
-      RowIterator childIterator = pQueue[left];
+      RangeRowIteratorImpl childIterator = pQueue[left];
       final int right = left + 1;
       // Setting childrenDiff to non-zero initially, so that if there is just one child (right == pQueueSize),
       // the expression `childrenDiff == 0` below is false.
       int childrenDiff = -1; // any non-zero number
       if (right < pQueueSize) {
-        RowIterator rightChildIterator = pQueue[right];
+        RangeRowIteratorImpl rightChildIterator = pQueue[right];
         childrenDiff = rightChildIterator.getPointer().compareTo(childIterator.getPointer());
         if (childrenDiff < 0) {
           child = right;

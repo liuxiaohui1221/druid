@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.granularity.Granularity;
+import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import org.apache.druid.segment.column.BaseColumn;
 import org.apache.druid.segment.column.BitmapIndex;
@@ -36,45 +37,205 @@ import org.apache.druid.segment.data.BitmapValues;
 import org.apache.druid.segment.data.CloseableIndexed;
 import org.apache.druid.segment.data.ImmutableBitmapValues;
 import org.apache.druid.segment.data.IndexedIterable;
+import org.apache.druid.segment.selector.settable.SettableColumnValueSelector;
+import org.apache.druid.segment.selector.settable.SettableLongColumnValueSelector;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  */
 public class QueryableIndexIndexableAdapter implements IndexableAdapter
 {
+  private final Closer closer = Closer.create();
+  private final Map<String, BaseColumn> columnCache = new HashMap<>();
   private final int numRows;
   private final QueryableIndex input;
   private final ImmutableList<String> availableDimensions;
   private final Metadata metadata;
-  private final List<String> compareDimensions;
+  private final List<String> targetDimensions;
   private final Granularity compareTimeGran;
+  private final List<DimensionHandler> dimensionHandlers;
+  private SimpleAscendingOffset lastOffset;
+  private MergingRangeRowIterator mergingRangeRowIterator;
+  private List<RangeRowIteratorImpl> rangeRowIterators;
 
   public QueryableIndexIndexableAdapter(QueryableIndex input)
   {
-    this.input = input;
-    numRows = input.getNumRows();
-    availableDimensions = ImmutableList.copyOf(input.getAvailableDimensions());
-    this.metadata = input.getMetadata();
-    this.compareDimensions = null;
-    this.compareTimeGran = null;
+    this(input, null, null);
   }
 
-  public QueryableIndexIndexableAdapter(QueryableIndex input, @Nullable List<String> compareDimensions, @Nullable Granularity compareTimeGran)
+  public QueryableIndexIndexableAdapter(QueryableIndex input, @Nullable List<String> targetDimensions, @Nullable Granularity compareTimeGran)
   {
     this.input = input;
     numRows = input.getNumRows();
     availableDimensions = ImmutableList.copyOf(input.getAvailableDimensions());
     this.metadata = input.getMetadata();
-    this.compareDimensions = compareDimensions;
+    this.targetDimensions = targetDimensions;
     this.compareTimeGran = compareTimeGran;
+
+    this.lastOffset = new SimpleAscendingOffset(numRows);
+
+    this.dimensionHandlers = new ArrayList<>(
+        input.getDimensionHandlers().values().stream()
+            .filter(dimensionHandler -> targetDimensions == null
+                || targetDimensions.contains(dimensionHandler.getDimensionName()))
+            .collect(Collectors.toList()));
+
+    if (compareTimeGran != null) {
+      this.rangeRowIterators = initRangeOffsets(dimensionHandlers, lastOffset.getOffset());
+      mergingRangeRowIterator = new MergingRangeRowIterator(rangeRowIterators);
+    }
   }
+
+  class MergingRowIterator implements TransformableRowIterator
+  {
+
+    @Override
+    public void mark()
+    {
+      mergingRangeRowIterator.mark();
+    }
+
+    @Override
+    public boolean hasTimeAndDimsChangedSinceMark()
+    {
+      return mergingRangeRowIterator.hasTimeAndDimsChangedSinceMark();
+    }
+
+    @Override
+    public boolean moveToNext()
+    {
+      boolean hasNext = mergingRangeRowIterator.moveToNext();
+      if (hasNext == false) {
+        final List<RangeRowIteratorImpl> nextRangeRowIterators = initRangeOffsets(dimensionHandlers, lastOffset.getOffset());
+        rangeRowIterators.clear();
+        if (nextRangeRowIterators == null || nextRangeRowIterators.size() == 0) {
+          return false;
+        }
+        rangeRowIterators.addAll(nextRangeRowIterators);
+        mergingRangeRowIterator = new MergingRangeRowIterator(QueryableIndexIndexableAdapter.this.rangeRowIterators);
+      }
+      return true;
+    }
+
+    @Override
+    public RowPointer getPointer()
+    {
+      return mergingRangeRowIterator.getPointer();
+    }
+
+    @Override
+    public void close()
+    {
+      try {
+        closer.close();
+        mergingRangeRowIterator.close();
+      }
+      catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    @Override
+    public TimeAndDimsPointer getMarkedPointer()
+    {
+      return mergingRangeRowIterator.getMarkedPointer();
+    }
+  }
+
+  private List<RangeRowIteratorImpl> initRangeOffsets(List<DimensionHandler> dimensionHandlers, int offsetStart)
+  {
+    SettableLongColumnValueSelector rowTimestampSelector2 = new SettableLongColumnValueSelector();
+    SettableColumnValueSelector<?>[] rowDimensionValueSelectors2;
+    SettableColumnValueSelector<?>[] rowMetricSelectors2;
+    ColumnValueSelector<?> offsetTimestampSelector2;
+    ColumnValueSelector<?>[] offsetDimensionValueSelectors2;
+    ColumnValueSelector<?>[] offsetMetricSelectors2;
+    boolean isFirst = false;
+    long firstTime = 0L;
+    long nextTime = 0L;
+    SimpleAscendingOffset rangeOffset = new SimpleAscendingOffset(numRows);
+    rangeOffset.setCurrentOffset(offsetStart);
+    if (!rangeOffset.withinBounds()) {
+      return null;
+    }
+
+    final ColumnSelectorFactory columnSelectorFactory2 = new QueryableIndexColumnSelectorFactory(
+        input,
+        VirtualColumns.EMPTY,
+        false,
+        closer,
+        rangeOffset,
+        columnCache
+    );
+
+    List<RangeRowIteratorImpl> iterators = new ArrayList<>();
+    for (; ; ) {
+      ColumnValueSelector offsetTimestampSelectorTemp = columnSelectorFactory2.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+      rowTimestampSelector2.setValue(offsetTimestampSelectorTemp.getLong());
+
+      if (!isFirst) {
+        isFirst = true;
+        firstTime = rowTimestampSelector2.getLong();
+      }
+
+      nextTime = compareTimeGran.bucketStart(rowTimestampSelector2.getLong());
+      firstTime = compareTimeGran.bucketStart(firstTime);
+      int timestampDiff = Long.compare(nextTime, firstTime);
+      if (timestampDiff != 0) {
+        offsetTimestampSelector2 = columnSelectorFactory2.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+
+        offsetDimensionValueSelectors2 = dimensionHandlers
+            .stream()
+            .map(DimensionHandler::getDimensionName)
+            .map(columnSelectorFactory2::makeColumnValueSelector)
+            .toArray(ColumnValueSelector[]::new);
+
+        offsetMetricSelectors2 =
+            getMetricNames().stream()
+                .map(columnSelectorFactory2::makeColumnValueSelector)
+                .toArray(ColumnValueSelector[]::new);
+
+        rowDimensionValueSelectors2 = dimensionHandlers
+            .stream()
+            .filter(dimensionHandler -> targetDimensions == null
+                || targetDimensions.contains(dimensionHandler.getDimensionName()))
+            .map(DimensionHandler::makeNewSettableEncodedValueSelector)
+            .toArray(SettableColumnValueSelector[]::new);
+        rowMetricSelectors2 = getMetricNames()
+            .stream()
+            .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
+            .toArray(SettableColumnValueSelector[]::new);
+
+        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input, rangeOffset, numRows,
+            rowDimensionValueSelectors2,
+            rowMetricSelectors2,
+            offsetTimestampSelector2,
+            offsetDimensionValueSelectors2,
+            offsetMetricSelectors2, dimensionHandlers, getMetricNames(), compareTimeGran);
+        iterators.add(rangeRowIterator);
+        lastOffset.setCurrentOffset(rangeOffset.getOffset());
+        // point2TimestampPrev = offsetTimestampSelector2.getLong();
+        break;
+      }
+      rangeOffset.increment();
+      if (!rangeOffset.withinBounds()) {
+        break;
+      }
+    }
+    return iterators;
+  }
+
 
   @Override
   public Interval getDataInterval()
@@ -163,9 +324,14 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
   }
 
   @Override
-  public RowIteratorImpl getRows()
+  public TransformableRowIterator getRows()
   {
-    return new RowIteratorImpl(input, numRows, getMetricNames(), compareTimeGran, compareDimensions);
+    if (compareTimeGran == null) {
+
+      return new RowIteratorImpl(input, numRows, getMetricNames(), compareTimeGran, targetDimensions);
+    } else {
+      return new MergingRowIterator();
+    }
   }
 
   @Override

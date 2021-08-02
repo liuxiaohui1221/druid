@@ -19,6 +19,9 @@
 
 package org.apache.druid.segment;
 
+import org.apache.druid.java.util.common.granularity.Granularity;
+
+import javax.annotation.Nullable;
 import java.util.List;
 import java.util.function.IntSupplier;
 
@@ -48,7 +51,7 @@ public final class RowPointer extends TimeAndDimsPointer
       IntSupplier rowNumPointer
   )
   {
-    super(timestampSelector, dimensionSelectors, dimensionHandlers, metricSelectors, metricNames, true);
+    super(timestampSelector, dimensionSelectors, dimensionHandlers, metricSelectors, metricNames, null);
     this.rowNumPointer = rowNumPointer;
   }
 
@@ -59,10 +62,10 @@ public final class RowPointer extends TimeAndDimsPointer
       ColumnValueSelector[] metricSelectors,
       List<String> metricNames,
       IntSupplier rowNumPointer,
-      boolean compareTime
+      @Nullable Granularity compareTimeGran
   )
   {
-    super(timestampSelector, dimensionSelectors, dimensionHandlers, metricSelectors, metricNames, compareTime);
+    super(timestampSelector, dimensionSelectors, dimensionHandlers, metricSelectors, metricNames, compareTimeGran);
     this.rowNumPointer = rowNumPointer;
   }
 

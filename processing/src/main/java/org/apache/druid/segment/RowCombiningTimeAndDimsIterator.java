@@ -19,6 +19,7 @@
 
 package org.apache.druid.segment;
 
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.aggregation.AggregateCombiner;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.roaringbitmap.RoaringBitmap;
@@ -105,7 +106,7 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
       List<TransformableRowIterator> originalIterators,
       AggregatorFactory[] metricAggs,
       List<String> metricNames,
-      List<String> targetDimensions
+      @Nullable Granularity granularity
   )
   {
     int numCombinedIterators = originalIterators.size();
@@ -136,7 +137,7 @@ final class RowCombiningTimeAndDimsIterator implements TimeAndDimsIterator
                 markedRowPointer.getDimensionHandlers(),
                 combinedMetricSelectors,
                 combinedMetricNames,
-                targetDimensions == null
+                granularity
             );
           } else {
             return null;

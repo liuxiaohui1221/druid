@@ -68,7 +68,7 @@ import java.util.stream.Collectors;
 
 public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
 {
-  public final String basePath = "D:\\test\\merge";
+  public final String basePath = "C:\\test\\merge";
   public final File temporaryFolder = new File(basePath);
 
   public final ObjectMapper objectMapper = new ObjectMapper();
@@ -170,7 +170,8 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
                 indexSpec,
                 null,
                 -1,
-                true
+                true,
+                index1.getMetadata().getQueryGranularity()
             )
         )
     );
@@ -178,7 +179,7 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
     // final QueryableIndexIndexableAdapter adapter = new QueryableIndexIndexableAdapter(merged);
     // final List<DebugRow> rowList = RowIteratorHelper.toList(adapter.getRows());
 
-    final QueryableIndexIndexableAdapter adapter2 = new QueryableIndexIndexableAdapter(merged2, null);
+    final QueryableIndexIndexableAdapter adapter2 = new QueryableIndexIndexableAdapter(merged2, null, null);
     final List<DebugRow> rowList2 = RowIteratorHelper.toList(adapter2.getRows());
 
     // rowList.forEach(key -> System.out.println(key.dimensions + "," + key.metrics));
@@ -602,7 +603,7 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
     //     )
     // );
 
-    final QueryableIndexIndexableAdapter adapter = new QueryableIndexIndexableAdapter(merged, null);
+    final QueryableIndexIndexableAdapter adapter = new QueryableIndexIndexableAdapter(merged, null, null);
     final List<DebugRow> rowList = RowIteratorHelper.toList(adapter.getRows());
 
     // final QueryableIndexIndexableAdapter adapter2 = new QueryableIndexIndexableAdapter(mergedRollup, null);
@@ -1021,7 +1022,7 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
         )
     );
 
-    final QueryableIndexIndexableAdapter adapter = new QueryableIndexIndexableAdapter(merged, null);
+    final QueryableIndexIndexableAdapter adapter = new QueryableIndexIndexableAdapter(merged, null, null);
     final List<DebugRow> rowList = RowIteratorHelper.toList(adapter.getRows());
 
     Assert.assertEquals(
