@@ -601,23 +601,12 @@ public class IndexMergerV9 implements IndexMerger
           //IntBuffer长度是原始indexer中数据总条数，
           // 若每产生一新行聚合了indexer1对象中0,1,2,4行，indexer2对象中的0,1,6,7行，则需要在对应下标位置设置rowCount。
           IntBuffer conversionBuffer = rowNumConversions.get(originalIteratorIndex);
-          // int minRowNum = comprisedRows.getMinCurrentlyCombinedRowNumByOriginalIteratorIndex(originalIteratorIndex);
-          // int maxRowNum = comprisedRows.getMaxCurrentlyCombinedRowNumByOriginalIteratorIndex(originalIteratorIndex);
           Iterator<Integer> originalRowNums = comprisedRows.getCurrentlyCombinedRowNumsByOriginalIteratorIndex(
               originalIteratorIndex);
           while (originalRowNums.hasNext()) {
             int rowNum = originalRowNums.next();
-            // while (conversionBuffer.position() < rowNum) {
-            //   conversionBuffer.put(INVALID_ROW);
-            // }
-            System.out.println(originalIteratorIndex + ": " + Arrays.toString(conversionBuffer.array())
-                               + ","
-                               + rowNum
-                               + ","
-                               + rowCount);
             conversionBuffer.put(rowNum, rowCount);
           }
-
         }
 
       } else if (timeAndDimsIterator instanceof MergingRowIterator) {
