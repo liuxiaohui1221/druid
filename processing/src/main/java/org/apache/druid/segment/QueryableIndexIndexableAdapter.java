@@ -232,8 +232,8 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
   {
     boolean isFirst = false;
     long firstTime = 0;
-    long prevRangeTime = 0;
-    int prevRangeEndOffset = offsetStart;
+    long nextRangeTime = 0;
+    int nextRangeStartOffset = offsetStart;
     long firstMaterializeGranTime;
     long nextMaterializeGranTime;
     if (offsetStart == numRows - 1) {
@@ -255,26 +255,30 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
 
       if (!isFirst) {
         isFirst = true;
-        prevRangeTime = firstTime = offsetTimestampSelectorTemp.getLong();
+        nextRangeTime = firstTime = offsetTimestampSelectorTemp.getLong();
       }
 
       nextMaterializeGranTime = compareTimeGran.bucketStart(offsetTimestampSelectorTemp.getLong());
       firstMaterializeGranTime = compareTimeGran.bucketStart(firstTime);
       int timestampDiff = Long.compare(nextMaterializeGranTime, firstMaterializeGranTime);
 
-      final int compareTimeDiff = Long.compare(offsetTimestampSelectorTemp.getLong(), prevRangeTime);
+      final int compareTimeDiff = Long.compare(offsetTimestampSelectorTemp.getLong(), nextRangeTime);
       if (compareTimeDiff != 0 && lastOffset.getOffset() < numRows - 1) {
-        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input, prevRangeEndOffset, lastOffset.getOffset(),
-            dimensionHandlers, getMetricNames(), compareTimeGran);
+        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input,
+                                                                         nextRangeStartOffset,
+                                                                         lastOffset.getOffset(),
+                                                                         dimensionHandlers, getMetricNames(), compareTimeGran);
         iterators.add(rangeRowIterator);
-        prevRangeTime = offsetTimestampSelectorTemp.getLong();
-        prevRangeEndOffset = lastOffset.getOffset();
+        nextRangeTime = offsetTimestampSelectorTemp.getLong();
+        nextRangeStartOffset = lastOffset.getOffset();
         if (timestampDiff != 0) {
           break;
         }
       } else if (lastOffset.getOffset() == numRows - 1) {
-        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input, prevRangeEndOffset, numRows,
-            dimensionHandlers, getMetricNames(), compareTimeGran);
+        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input,
+                                                                         nextRangeStartOffset,
+                                                                         numRows,
+                                                                         dimensionHandlers, getMetricNames(), compareTimeGran);
         iterators.add(rangeRowIterator);
         break;
       }
