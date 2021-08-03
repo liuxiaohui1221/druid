@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.granularity.Granularity;
+import org.apache.druid.java.util.common.guava.CloseQuietly;
 import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import org.apache.druid.segment.column.BaseColumn;
@@ -67,7 +68,7 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
   private final List<DimensionHandler> dimensionHandlers;
   private SimpleAscendingOffset lastOffset;
   private MergingRangeRowIterator mergingRangeRowIterator;
-  private List<RangeRowIteratorImpl> rangeRowIterators;
+  private List<RangeRowIteratorImpl> rangeRowIterators = new ArrayList<>();
 
   public QueryableIndexIndexableAdapter(QueryableIndex input)
   {
@@ -92,24 +93,99 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
             .collect(Collectors.toList()));
 
     if (compareTimeGran != null) {
-      this.rangeRowIterators = initRangeOffsets(dimensionHandlers, lastOffset.getOffset());
+      rangeRowIterators = initRangeOffsets(dimensionHandlers, lastOffset.getOffset());
       mergingRangeRowIterator = new MergingRangeRowIterator(rangeRowIterators);
     }
   }
 
   class MergingRowIterator implements TransformableRowIterator
   {
+    private SimpleAscendingOffset offset;
+    private final SettableLongColumnValueSelector rowTimestampSelector = new SettableLongColumnValueSelector();
+    private final SettableColumnValueSelector<?>[] rowDimensionValueSelectors;
+    private final SettableColumnValueSelector<?>[] rowMetricSelectors;
+    private final RowPointer rowPointer;
 
+    private final SettableLongColumnValueSelector markedTimestampSelector = new SettableLongColumnValueSelector();
+    private final SettableColumnValueSelector<?>[] markedDimensionValueSelectors;
+    private final SettableColumnValueSelector<?>[] markedMetricSelectors;
+    private final TimeAndDimsPointer markedRowPointer;
+
+    public MergingRowIterator()
+    {
+      offset = new SimpleAscendingOffset(numRows);
+
+      rowDimensionValueSelectors = dimensionHandlers
+          .stream()
+          .map(DimensionHandler::makeNewSettableEncodedValueSelector)
+          .toArray(SettableColumnValueSelector[]::new);
+      rowMetricSelectors = getMetricNames()
+          .stream()
+          .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
+          .toArray(SettableColumnValueSelector[]::new);
+
+      rowPointer = new RowPointer(
+          rowTimestampSelector,
+          rowDimensionValueSelectors,
+          dimensionHandlers,
+          rowMetricSelectors,
+          getMetricNames(),
+          offset::getOffset,
+          compareTimeGran
+      );
+
+      markedDimensionValueSelectors = dimensionHandlers
+          .stream()
+          .map(DimensionHandler::makeNewSettableEncodedValueSelector)
+          .toArray(SettableColumnValueSelector[]::new);
+      markedMetricSelectors = getMetricNames()
+          .stream()
+          .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
+          .toArray(SettableColumnValueSelector[]::new);
+      markedRowPointer = new TimeAndDimsPointer(
+          markedTimestampSelector,
+          markedDimensionValueSelectors,
+          dimensionHandlers,
+          markedMetricSelectors,
+          getMetricNames(),
+          compareTimeGran
+      );
+    }
+
+    private void setRowPointerValues(RowPointer currRangeRowPointer)
+    {
+      rowTimestampSelector.setValue(currRangeRowPointer.timestampSelector.getLong());
+      for (int i = 0; i < currRangeRowPointer.dimensionSelectors.length; i++) {
+        rowDimensionValueSelectors[i].setValueFrom(currRangeRowPointer.dimensionSelectors[i]);
+      }
+      for (int i = 0; i < currRangeRowPointer.metricSelectors.length; i++) {
+        rowMetricSelectors[i].setValueFrom(currRangeRowPointer.metricSelectors[i]);
+      }
+      offset.setCurrentOffset(currRangeRowPointer.getRowNum());
+    }
+
+    private void setMarkedRowPointerValues()
+    {
+      markedTimestampSelector.setValue(rowTimestampSelector.getLong());
+      for (int i = 0; i < rowDimensionValueSelectors.length; i++) {
+        markedDimensionValueSelectors[i].setValueFrom(rowDimensionValueSelectors[i]);
+      }
+      for (int i = 0; i < rowMetricSelectors.length; i++) {
+        markedMetricSelectors[i].setValueFrom(rowMetricSelectors[i]);
+      }
+    }
     @Override
     public void mark()
     {
       mergingRangeRowIterator.mark();
+      setMarkedRowPointerValues();
     }
 
     @Override
     public boolean hasTimeAndDimsChangedSinceMark()
     {
-      return mergingRangeRowIterator.hasTimeAndDimsChangedSinceMark();
+      // return mergingRangeRowIterator.hasTimeAndDimsChangedSinceMark();
+      return markedRowPointer.compareTo(rowPointer) != 0;
     }
 
     @Override
@@ -123,115 +199,86 @@ public class QueryableIndexIndexableAdapter implements IndexableAdapter
           return false;
         }
         rangeRowIterators.addAll(nextRangeRowIterators);
-        mergingRangeRowIterator = new MergingRangeRowIterator(QueryableIndexIndexableAdapter.this.rangeRowIterators);
+        mergingRangeRowIterator.initRangeRowIterators(rangeRowIterators);
       }
+
+      setRowPointerValues(mergingRangeRowIterator.getPointer());
       return true;
     }
 
     @Override
     public RowPointer getPointer()
     {
-      return mergingRangeRowIterator.getPointer();
+      return rowPointer;
+      // return mergingRangeRowIterator.getPointer();
     }
 
     @Override
     public void close()
     {
-      try {
-        closer.close();
-        mergingRangeRowIterator.close();
-      }
-      catch (IOException e) {
-        throw new RuntimeException(e);
-      }
+      CloseQuietly.close(closer);
+      mergingRangeRowIterator.close();
     }
 
     @Override
     public TimeAndDimsPointer getMarkedPointer()
     {
-      return mergingRangeRowIterator.getMarkedPointer();
+      return markedRowPointer;
+      // return mergingRangeRowIterator.getMarkedPointer();
     }
   }
 
   private List<RangeRowIteratorImpl> initRangeOffsets(List<DimensionHandler> dimensionHandlers, int offsetStart)
   {
-    SettableLongColumnValueSelector rowTimestampSelector2 = new SettableLongColumnValueSelector();
-    SettableColumnValueSelector<?>[] rowDimensionValueSelectors2;
-    SettableColumnValueSelector<?>[] rowMetricSelectors2;
-    ColumnValueSelector<?> offsetTimestampSelector2;
-    ColumnValueSelector<?>[] offsetDimensionValueSelectors2;
-    ColumnValueSelector<?>[] offsetMetricSelectors2;
     boolean isFirst = false;
-    long firstTime = 0L;
-    long nextTime = 0L;
-    SimpleAscendingOffset rangeOffset = new SimpleAscendingOffset(numRows);
-    rangeOffset.setCurrentOffset(offsetStart);
-    if (!rangeOffset.withinBounds()) {
+    long firstTime = 0;
+    long prevRangeTime = 0;
+    int prevRangeEndOffset = offsetStart;
+    long firstMaterializeGranTime;
+    long nextMaterializeGranTime;
+    if (offsetStart == numRows - 1) {
       return null;
     }
 
-    final ColumnSelectorFactory columnSelectorFactory2 = new QueryableIndexColumnSelectorFactory(
+    final ColumnSelectorFactory columnSelectorFactory = new QueryableIndexColumnSelectorFactory(
         input,
         VirtualColumns.EMPTY,
         false,
         closer,
-        rangeOffset,
+        lastOffset,
         columnCache
     );
 
     List<RangeRowIteratorImpl> iterators = new ArrayList<>();
     for (; ; ) {
-      ColumnValueSelector offsetTimestampSelectorTemp = columnSelectorFactory2.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
-      rowTimestampSelector2.setValue(offsetTimestampSelectorTemp.getLong());
+      ColumnValueSelector offsetTimestampSelectorTemp = columnSelectorFactory.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
 
       if (!isFirst) {
         isFirst = true;
-        firstTime = rowTimestampSelector2.getLong();
+        prevRangeTime = firstTime = offsetTimestampSelectorTemp.getLong();
       }
 
-      nextTime = compareTimeGran.bucketStart(rowTimestampSelector2.getLong());
-      firstTime = compareTimeGran.bucketStart(firstTime);
-      int timestampDiff = Long.compare(nextTime, firstTime);
-      if (timestampDiff != 0) {
-        offsetTimestampSelector2 = columnSelectorFactory2.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+      nextMaterializeGranTime = compareTimeGran.bucketStart(offsetTimestampSelectorTemp.getLong());
+      firstMaterializeGranTime = compareTimeGran.bucketStart(firstTime);
+      int timestampDiff = Long.compare(nextMaterializeGranTime, firstMaterializeGranTime);
 
-        offsetDimensionValueSelectors2 = dimensionHandlers
-            .stream()
-            .map(DimensionHandler::getDimensionName)
-            .map(columnSelectorFactory2::makeColumnValueSelector)
-            .toArray(ColumnValueSelector[]::new);
-
-        offsetMetricSelectors2 =
-            getMetricNames().stream()
-                .map(columnSelectorFactory2::makeColumnValueSelector)
-                .toArray(ColumnValueSelector[]::new);
-
-        rowDimensionValueSelectors2 = dimensionHandlers
-            .stream()
-            .filter(dimensionHandler -> targetDimensions == null
-                || targetDimensions.contains(dimensionHandler.getDimensionName()))
-            .map(DimensionHandler::makeNewSettableEncodedValueSelector)
-            .toArray(SettableColumnValueSelector[]::new);
-        rowMetricSelectors2 = getMetricNames()
-            .stream()
-            .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
-            .toArray(SettableColumnValueSelector[]::new);
-
-        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input, rangeOffset, numRows,
-            rowDimensionValueSelectors2,
-            rowMetricSelectors2,
-            offsetTimestampSelector2,
-            offsetDimensionValueSelectors2,
-            offsetMetricSelectors2, dimensionHandlers, getMetricNames(), compareTimeGran);
+      final int compareTimeDiff = Long.compare(offsetTimestampSelectorTemp.getLong(), prevRangeTime);
+      if (compareTimeDiff != 0 && lastOffset.getOffset() < numRows - 1) {
+        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input, prevRangeEndOffset, lastOffset.getOffset(),
+            dimensionHandlers, getMetricNames(), compareTimeGran);
         iterators.add(rangeRowIterator);
-        lastOffset.setCurrentOffset(rangeOffset.getOffset());
-        // point2TimestampPrev = offsetTimestampSelector2.getLong();
+        prevRangeTime = offsetTimestampSelectorTemp.getLong();
+        prevRangeEndOffset = lastOffset.getOffset();
+        if (timestampDiff != 0) {
+          break;
+        }
+      } else if (lastOffset.getOffset() == numRows - 1) {
+        RangeRowIteratorImpl rangeRowIterator = new RangeRowIteratorImpl(input, prevRangeEndOffset, numRows,
+            dimensionHandlers, getMetricNames(), compareTimeGran);
+        iterators.add(rangeRowIterator);
         break;
       }
-      rangeOffset.increment();
-      if (!rangeOffset.withinBounds()) {
-        break;
-      }
+      lastOffset.increment();
     }
     return iterators;
   }

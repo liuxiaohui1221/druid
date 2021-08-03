@@ -33,6 +33,8 @@ import org.apache.druid.data.input.impl.DimensionSchema;
 import org.apache.druid.data.input.impl.DimensionSchema.MultiValueHandling;
 import org.apache.druid.data.input.impl.DimensionsSpec;
 import org.apache.druid.data.input.impl.StringDimensionSchema;
+import org.apache.druid.java.util.common.granularity.Granularities;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.aggregation.CountAggregatorFactory;
 import org.apache.druid.query.aggregation.LongSumAggregatorFactory;
@@ -136,6 +138,92 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
     this.useBitmapIndexes = bitmapSerdeFactory != null;
   }
 
+  @Test
+  public void testMaterializeMergeDiffGran() throws Exception
+  {
+    IncrementalIndex toPersist1 = getIndexD3();
+    // IncrementalIndex toPersist1 = getIndexD2();
+
+    final File tmpDir = new File(temporaryFolder, "tempDir");
+    final File tmpDir2 = new File(temporaryFolder, "tempDir2");
+    final File tmpDir3 = new File(temporaryFolder, "tempDir3");
+    final File tmpDirMerged = new File(temporaryFolder, "tempDirMerged");
+    final File tmpDirMerged2 = new File(temporaryFolder, "tempDirMerged2");
+
+    QueryableIndex index1 = closer.closeLater(
+        indexIO.loadIndex(indexMerger.persist(toPersist1, tmpDir, indexSpec, null))
+    );
+
+    // QueryableIndex index2 = closer.closeLater(
+    //     indexIO.loadIndex(indexMerger.persist(toPersist2, tmpDir2, indexSpec, null))
+    // );
+    System.out.println("getNumRows1()=" + index1.getNumRows());
+
+    List<String> targetDimensions = Arrays.asList("d3", "d1");
+    final Granularity day = Granularities.DAY;
+
+    final QueryableIndex merged2 = closer.closeLater(
+        indexIO.loadIndex(
+            indexMerger.mergeQueryableIndex(
+                Collections.singletonList(index1),
+                true,
+                targetDimensions,
+                new AggregatorFactory[]{new LongSumAggregatorFactory("sum", "sum")},
+                tmpDirMerged2,
+                indexSpec,
+                null,
+                -1,
+                true,
+                day
+            )
+        )
+    );
+
+    // final QueryableIndexIndexableAdapter adapter = new QueryableIndexIndexableAdapter(merged);
+    // final List<DebugRow> rowList = RowIteratorHelper.toList(adapter.getRows());
+
+    final QueryableIndexIndexableAdapter adapter2 = new QueryableIndexIndexableAdapter(merged2, null, null);
+    final List<DebugRow> rowList2 = RowIteratorHelper.toList(adapter2.getRows());
+
+    // rowList.forEach(key -> System.out.println(key.dimensions + "," + key.metrics));
+    rowList2.forEach(key -> System.out.println(key.dimensions + "," + key.metrics));
+
+    // Assert.assertEquals(Arrays.asList("d3", "d1"), ImmutableList.copyOf(adapter.getDimensionNames()));
+    Assert.assertEquals(6, rowList2.size());
+
+    //__time=1,2 ---> 0
+    Assert.assertEquals(Arrays.asList("30000", "100"), rowList2.get(0).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(22L), rowList2.get(0).metricValues());
+
+    Assert.assertEquals(Arrays.asList("50000", "200"), rowList2.get(1).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(400L), rowList2.get(1).metricValues());
+
+    Assert.assertEquals(Arrays.asList("50001", "200"), rowList2.get(2).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(100L), rowList2.get(2).metricValues());
+
+    //__time=today
+    Assert.assertEquals(Arrays.asList("30000", "100"), rowList2.get(3).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(2L), rowList2.get(3).metricValues());
+
+    Assert.assertEquals(Arrays.asList("50000", "200"), rowList2.get(4).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(100L), rowList2.get(4).metricValues());
+
+    Assert.assertEquals(Arrays.asList("60000", "200"), rowList2.get(5).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(100L), rowList2.get(5).metricValues());
+
+    checkBitmapIndex(Collections.emptyList(), adapter2.getBitmapIndex("d3", null));
+    //rowNum list
+    checkBitmapIndex(Arrays.asList(0, 3), adapter2.getBitmapIndex("d3", "30000"));
+    checkBitmapIndex(Arrays.asList(1, 4), adapter2.getBitmapIndex("d3", "50000"));
+    checkBitmapIndex(Collections.singletonList(2), adapter2.getBitmapIndex("d3", "50001"));
+    checkBitmapIndex(Collections.singletonList(5), adapter2.getBitmapIndex("d3", "60000"));
+
+    checkBitmapIndex(Collections.emptyList(), adapter2.getBitmapIndex("d1", null));
+    checkBitmapIndex(Arrays.asList(0, 3), adapter2.getBitmapIndex("d1", "100"));
+    checkBitmapIndex(Arrays.asList(1, 2, 4, 5), adapter2.getBitmapIndex("d1", "200"));
+
+  }
+
 
   @Test
   public void testNonLexicographicDimOrderMerge() throws Exception
@@ -186,25 +274,38 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
     rowList2.forEach(key -> System.out.println(key.dimensions + "," + key.metrics));
 
     // Assert.assertEquals(Arrays.asList("d3", "d1"), ImmutableList.copyOf(adapter.getDimensionNames()));
-    Assert.assertEquals(2, rowList2.size());
+    Assert.assertEquals(5, rowList2.size());
 
+    //__time=1
     Assert.assertEquals(Arrays.asList("30000", "100"), rowList2.get(0).dimensionValues());
-    Assert.assertEquals(Collections.singletonList(22L), rowList2.get(0).metricValues());
+    Assert.assertEquals(Collections.singletonList(2L), rowList2.get(0).metricValues());
 
     Assert.assertEquals(Arrays.asList("50000", "200"), rowList2.get(1).dimensionValues());
-    Assert.assertEquals(Collections.singletonList(200L), rowList2.get(1).metricValues());
+    Assert.assertEquals(Collections.singletonList(100L), rowList2.get(1).metricValues());
+
+    Assert.assertEquals(Arrays.asList("50001", "200"), rowList2.get(2).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(100L), rowList2.get(2).metricValues());
+
+    //__time=2
+    Assert.assertEquals(Arrays.asList("30000", "100"), rowList2.get(3).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(20L), rowList2.get(3).metricValues());
+
+    Assert.assertEquals(Arrays.asList("50000", "200"), rowList2.get(4).dimensionValues());
+    Assert.assertEquals(Collections.singletonList(300L), rowList2.get(4).metricValues());
 
     checkBitmapIndex(Collections.emptyList(), adapter2.getBitmapIndex("d3", null));
-    checkBitmapIndex(Collections.singletonList(0), adapter2.getBitmapIndex("d3", "30000"));
-    checkBitmapIndex(Collections.singletonList(1), adapter2.getBitmapIndex("d3", "50000"));
+    //rowNum list
+    checkBitmapIndex(Arrays.asList(0, 3), adapter2.getBitmapIndex("d3", "30000"));
+    checkBitmapIndex(Arrays.asList(1, 4), adapter2.getBitmapIndex("d3", "50000"));
+    checkBitmapIndex(Collections.singletonList(2), adapter2.getBitmapIndex("d3", "50001"));
 
     checkBitmapIndex(Collections.emptyList(), adapter2.getBitmapIndex("d1", null));
-    checkBitmapIndex(Collections.singletonList(0), adapter2.getBitmapIndex("d1", "100"));
-    checkBitmapIndex(Collections.singletonList(1), adapter2.getBitmapIndex("d1", "200"));
+    checkBitmapIndex(Arrays.asList(0, 3), adapter2.getBitmapIndex("d1", "100"));
+    checkBitmapIndex(Arrays.asList(1, 2, 4), adapter2.getBitmapIndex("d1", "200"));
 
   }
 
-  // @Test
+  @Test
   public void testMaxColumnsToMerge() throws Exception
   {
     IncrementalIndexSchema indexSchema = new IncrementalIndexSchema.Builder()
@@ -872,12 +973,20 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
         new MapBasedInputRow(
             1,
             Arrays.asList("d3", "d1", "d2"),
-            ImmutableMap.of("d1", "100", "d2", "4000", "d3", "30000", "sum", 2)
+            ImmutableMap.of("d1", "100", "d2", "4000", "d3", "30000", "sum", 1)
         )
     );
     toPersist1.add(
         new MapBasedInputRow(
             1,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "100", "d2", "4000", "d3", "30000", "sum", 1)
+        )
+    );
+
+    toPersist1.add(
+        new MapBasedInputRow(
+            2,
             Arrays.asList("d3", "d1", "d2"),
             ImmutableMap.of("d1", "100", "d2", "40000", "d3", "30000", "sum", 10)
         )
@@ -886,23 +995,22 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
         new MapBasedInputRow(
             2,
             Arrays.asList("d3", "d1", "d2"),
-            ImmutableMap.of("d1", "100", "d2", "40000", "d3", "30000", "sum", 100)
+            ImmutableMap.of("d1", "100", "d2", "40000", "d3", "30000", "sum", 10)
+        )
+    );
+
+    toPersist1.add(
+        new MapBasedInputRow(
+            2,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
         )
     );
     toPersist1.add(
         new MapBasedInputRow(
             2,
             Arrays.asList("d3", "d1", "d2"),
-            ImmutableMap.of("d1", "100", "d2", "40000", "d3", "30000", "sum", 1000)
-        )
-    );
-
-
-    toPersist1.add(
-        new MapBasedInputRow(
-            1,
-            Arrays.asList("d3", "d1", "d2"),
-            ImmutableMap.of("d1", "300", "d2", "2000", "d3", "40000", "sum", 10000)
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
         )
     );
 
@@ -910,10 +1018,54 @@ public class IndexMergerTestBaseForTableView extends InitializedNullHandlingTest
         new MapBasedInputRow(
             1,
             Arrays.asList("d3", "d1", "d2"),
-            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100000)
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
+        )
+    );
+    toPersist1.add(
+        new MapBasedInputRow(
+            1,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50001", "sum", 100)
         )
     );
 
+    toPersist1.add(
+        new MapBasedInputRow(
+            2,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
+        )
+    );
+
+    //different granlarity time
+    toPersist1.add(
+        new MapBasedInputRow(
+            System.currentTimeMillis() - 30,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "100", "d2", "4000", "d3", "30000", "sum", 1)
+        )
+    );
+    toPersist1.add(
+        new MapBasedInputRow(
+            System.currentTimeMillis() - 20,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "100", "d2", "4000", "d3", "30000", "sum", 1)
+        )
+    );
+    toPersist1.add(
+        new MapBasedInputRow(
+            System.currentTimeMillis() - 10,
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "50000", "sum", 100)
+        )
+    );
+    toPersist1.add(
+        new MapBasedInputRow(
+            System.currentTimeMillis(),
+            Arrays.asList("d3", "d1", "d2"),
+            ImmutableMap.of("d1", "200", "d2", "3000", "d3", "60000", "sum", 100)
+        )
+    );
     return toPersist1;
   }
 

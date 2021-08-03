@@ -20,10 +20,10 @@
 package org.apache.druid.segment;
 
 import it.unimi.dsi.fastutil.objects.ObjectHeaps;
+import org.apache.druid.java.util.common.guava.CloseQuietly;
 import org.apache.druid.java.util.common.io.Closer;
 
 import javax.annotation.Nullable;
-import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -45,19 +45,19 @@ final class MergingRangeRowIterator implements TransformableRowIterator
   /** Used to close {@link #originalIterators} */
   private final Closer closer = Closer.create();
 
-  private final RangeRowIteratorImpl[] originalIterators;
+  private RangeRowIteratorImpl[] originalIterators;
 
   /**
    * Binary heap (priority queue)
    */
-  private final RangeRowIteratorImpl[] pQueue;
+  private RangeRowIteratorImpl[] pQueue;
   private int pQueueSize;
 
   /**
    * Boolean flags corresponding to the elements of {@link #pQueue} binary heap, signifying if the element is equal
    * to one or both children in the binary heap. For leaf elements (i. e. no children), the value should be false.
    */
-  private final boolean[] equalToChild;
+  private boolean[] equalToChild;
 
   /**
    * true while {@link #moveToNext()} is not called yet.
@@ -75,6 +75,11 @@ final class MergingRangeRowIterator implements TransformableRowIterator
   private RowIterator lastMarkedHead = null;
 
   MergingRangeRowIterator(List<RangeRowIteratorImpl> iterators)
+  {
+    initRangeRowIterators(iterators);
+  }
+
+  public void initRangeRowIterators(List<RangeRowIteratorImpl> iterators)
   {
     iterators.forEach(closer::register);
     originalIterators = new RangeRowIteratorImpl[iterators.size()];
@@ -183,7 +188,6 @@ final class MergingRangeRowIterator implements TransformableRowIterator
   @Override
   public void mark()
   {
-    pQueue[0].mark();
     changedSinceMark = false;
     lastMarkedHead = null;
   }
@@ -270,11 +274,6 @@ final class MergingRangeRowIterator implements TransformableRowIterator
   @Override
   public void close()
   {
-    try {
-      closer.close();
-    }
-    catch (IOException e) {
-      throw new RuntimeException(e);
-    }
+    CloseQuietly.close(closer);
   }
 }

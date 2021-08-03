@@ -4,6 +4,7 @@ import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.CloseQuietly;
 import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.segment.column.BaseColumn;
+import org.apache.druid.segment.column.ColumnHolder;
 import org.apache.druid.segment.selector.settable.SettableColumnValueSelector;
 import org.apache.druid.segment.selector.settable.SettableLongColumnValueSelector;
 
@@ -37,25 +38,45 @@ public class RangeRowIteratorImpl implements TransformableRowIterator
   boolean first = true;
   int memoizedOffset = -1;
 
-  RangeRowIteratorImpl(QueryableIndex input, SimpleAscendingOffset offset, int numRows,
-                       SettableColumnValueSelector<?>[] rowDimensionValueSelectors2,
-                       SettableColumnValueSelector<?>[] rowMetricSelectors2,
-                       ColumnValueSelector<?> offsetTimestampSelector2,
-                       ColumnValueSelector<?>[] offsetDimensionValueSelectors2,
-                       ColumnValueSelector<?>[] offsetMetricSelectors2,
-                       List<DimensionHandler> dimensionHandlers, List<String> metricNames,
+  RangeRowIteratorImpl(QueryableIndex input, int startOffset, int numRows,
+                       List<DimensionHandler> dimensionHandlers,
+                       List<String> metricNames,
                        @Nullable Granularity compareTimeGran)
   {
-    this.offset = offset;
+    this.offset = new SimpleAscendingOffset(numRows);
+    this.offset.setCurrentOffset(startOffset);
+
+    final ColumnSelectorFactory columnSelectorFactory = new QueryableIndexColumnSelectorFactory(
+        input,
+        VirtualColumns.EMPTY,
+        false,
+        closer,
+        offset,
+        columnCache
+    );
+
+    offsetTimestampSelector = columnSelectorFactory.makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+
+    offsetDimensionValueSelectors = dimensionHandlers
+        .stream()
+        .map(DimensionHandler::getDimensionName)
+        .map(columnSelectorFactory::makeColumnValueSelector)
+        .toArray(ColumnValueSelector[]::new);
+
+    offsetMetricSelectors =
+        metricNames.stream()
+            .map(columnSelectorFactory::makeColumnValueSelector)
+            .toArray(ColumnValueSelector[]::new);
+
+    rowDimensionValueSelectors = dimensionHandlers
+        .stream()
+        .map(DimensionHandler::makeNewSettableEncodedValueSelector)
+        .toArray(SettableColumnValueSelector[]::new);
+    rowMetricSelectors = metricNames
+        .stream()
+        .map(metric -> input.getColumnHolder(metric).makeNewSettableColumnValueSelector())
+        .toArray(SettableColumnValueSelector[]::new);
     maxValidOffset = numRows - 1;
-    offsetTimestampSelector = offsetTimestampSelector2;
-
-    offsetDimensionValueSelectors = offsetDimensionValueSelectors2;
-
-    // List<String> metricNames = getMetricNames();
-    offsetMetricSelectors = offsetMetricSelectors2;
-    rowDimensionValueSelectors = rowDimensionValueSelectors2;
-    rowMetricSelectors = rowMetricSelectors2;
 
     rowPointer = new RowPointer(
         rowTimestampSelector,
@@ -63,7 +84,8 @@ public class RangeRowIteratorImpl implements TransformableRowIterator
         dimensionHandlers,
         rowMetricSelectors,
         metricNames,
-        offset::getOffset
+        offset::getOffset,
+        compareTimeGran
     );
 
     markedDimensionValueSelectors = dimensionHandlers
