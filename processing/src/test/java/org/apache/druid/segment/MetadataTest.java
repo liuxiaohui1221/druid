@@ -66,13 +66,13 @@ public class MetadataTest
   @Test
   public void testMerge()
   {
-    Assert.assertNull(Metadata.merge(null, null));
-    Assert.assertNull(Metadata.merge(ImmutableList.of(), null));
+    Assert.assertNull(Metadata.merge(null, null, null));
+    Assert.assertNull(Metadata.merge(ImmutableList.of(), null, null));
 
     List<Metadata> metadataToBeMerged = new ArrayList<>();
 
     metadataToBeMerged.add(null);
-    Assert.assertNull(Metadata.merge(metadataToBeMerged, null));
+    Assert.assertNull(Metadata.merge(metadataToBeMerged, null, null));
 
     //sanity merge check
     AggregatorFactory[] aggs = new AggregatorFactory[] {
@@ -111,7 +111,7 @@ public class MetadataTest
         Granularities.ALL,
         Boolean.FALSE
     );
-    Assert.assertEquals(merged, Metadata.merge(ImmutableList.of(m1, m2), null));
+    Assert.assertEquals(merged, Metadata.merge(ImmutableList.of(m1, m2), null, null));
 
     //merge check with one metadata being null
     metadataToBeMerged.clear();
@@ -121,7 +121,7 @@ public class MetadataTest
 
     final Metadata merged2 = new Metadata(Collections.singletonMap("k", "v"), null, null, null, null);
 
-    Assert.assertEquals(merged2, Metadata.merge(metadataToBeMerged, null));
+    Assert.assertEquals(merged2, Metadata.merge(metadataToBeMerged, null, null));
 
     //merge check with client explicitly providing merged aggregators
     AggregatorFactory[] explicitAggs = new AggregatorFactory[] {
@@ -132,7 +132,7 @@ public class MetadataTest
 
     Assert.assertEquals(
         merged3,
-        Metadata.merge(metadataToBeMerged, explicitAggs)
+        Metadata.merge(metadataToBeMerged, explicitAggs, null)
     );
 
     final Metadata merged4 = new Metadata(
@@ -144,7 +144,7 @@ public class MetadataTest
     );
     Assert.assertEquals(
         merged4,
-        Metadata.merge(ImmutableList.of(m3, m2), explicitAggs)
+        Metadata.merge(ImmutableList.of(m3, m2), explicitAggs, null)
     );
   }
 }

@@ -127,8 +127,8 @@ public class Metadata
   @Nullable
   public static Metadata merge(
       @Nullable List<Metadata> toBeMerged,
-      @Nullable AggregatorFactory[] overrideMergedAggregators
-  )
+      @Nullable AggregatorFactory[] overrideMergedAggregators,
+      @Nullable Granularity targetQueryGranularity)
   {
     if (toBeMerged == null || toBeMerged.size() == 0) {
       return null;
@@ -209,7 +209,7 @@ public class Metadata
         mergedContainer,
         mergedAggregators,
         mergedTimestampSpec,
-        mergedGranularity,
+        targetQueryGranularity == null ? mergedGranularity : targetQueryGranularity,
         rollup
     );
   }

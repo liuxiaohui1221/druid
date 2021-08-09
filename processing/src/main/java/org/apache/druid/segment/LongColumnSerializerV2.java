@@ -24,6 +24,7 @@ import org.apache.druid.collections.bitmap.ImmutableBitmap;
 import org.apache.druid.collections.bitmap.MutableBitmap;
 import org.apache.druid.common.utils.SerializerUtils;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.io.smoosh.FileSmoosher;
 import org.apache.druid.segment.data.BitmapSerdeFactory;
 import org.apache.druid.segment.data.ByteBufferWriter;
@@ -32,6 +33,7 @@ import org.apache.druid.segment.data.CompressionFactory;
 import org.apache.druid.segment.data.CompressionStrategy;
 import org.apache.druid.segment.writeout.SegmentWriteOutMedium;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteOrder;
 import java.nio.channels.WritableByteChannel;
@@ -50,8 +52,8 @@ public class LongColumnSerializerV2 implements GenericColumnSerializer<Object>
       String filenameBase,
       CompressionStrategy compression,
       CompressionFactory.LongEncodingStrategy encoding,
-      BitmapSerdeFactory bitmapSerdeFactory
-  )
+      BitmapSerdeFactory bitmapSerdeFactory,
+      @Nullable Granularity targetGran)
   {
     return new LongColumnSerializerV2(
         columnName,
@@ -60,7 +62,8 @@ public class LongColumnSerializerV2 implements GenericColumnSerializer<Object>
         IndexIO.BYTE_ORDER,
         compression,
         encoding,
-        bitmapSerdeFactory
+        bitmapSerdeFactory,
+        targetGran
     );
   }
 
@@ -71,6 +74,7 @@ public class LongColumnSerializerV2 implements GenericColumnSerializer<Object>
   private final CompressionStrategy compression;
   private final CompressionFactory.LongEncodingStrategy encoding;
   private final BitmapSerdeFactory bitmapSerdeFactory;
+  private final Granularity targetGran;
 
   private ColumnarLongsSerializer writer;
   private ByteBufferWriter<ImmutableBitmap> nullValueBitmapWriter;
@@ -84,8 +88,8 @@ public class LongColumnSerializerV2 implements GenericColumnSerializer<Object>
       ByteOrder byteOrder,
       CompressionStrategy compression,
       CompressionFactory.LongEncodingStrategy encoding,
-      BitmapSerdeFactory bitmapSerdeFactory
-  )
+      BitmapSerdeFactory bitmapSerdeFactory,
+      @Nullable Granularity targetGran)
   {
     this.columnName = columnName;
     this.segmentWriteOutMedium = segmentWriteOutMedium;
@@ -94,6 +98,7 @@ public class LongColumnSerializerV2 implements GenericColumnSerializer<Object>
     this.compression = compression;
     this.encoding = encoding;
     this.bitmapSerdeFactory = bitmapSerdeFactory;
+    this.targetGran = targetGran;
   }
 
   @Override
@@ -123,7 +128,11 @@ public class LongColumnSerializerV2 implements GenericColumnSerializer<Object>
       nullRowsBitmap.add(rowCount);
       writer.add(0L);
     } else {
-      writer.add(selector.getLong());
+      if (targetGran == null) {
+        writer.add(selector.getLong());
+      } else {
+        writer.add(targetGran.bucketStart(selector.getLong()));
+      }
     }
     rowCount++;
   }

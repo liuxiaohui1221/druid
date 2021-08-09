@@ -68,6 +68,7 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
   private final Comparator<ColumnValueSelector>[] dimensionSelectorComparators;
   final ColumnValueSelector[] metricSelectors;
   private final List<String> metricNames;
+  @Nullable
   private final Granularity compareTimeGran;
 
   /**
@@ -103,7 +104,11 @@ public class TimeAndDimsPointer implements Comparable<TimeAndDimsPointer>
 
   public long getTimestamp()
   {
-    return timestampSelector.getLong();
+    if (compareTimeGran == null) {
+      return timestampSelector.getLong();
+    } else {
+      return compareTimeGran.bucketStart(timestampSelector.getLong());
+    }
   }
 
   ColumnValueSelector getDimensionSelector(int dimIndex)

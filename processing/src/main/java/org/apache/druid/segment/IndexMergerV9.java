@@ -185,7 +185,7 @@ public class IndexMergerV9 implements IndexMerger
       final IndexSpec indexSpec,
       final @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
       final boolean materializedMerge,
-      final Granularity granularity
+      final Granularity targetQueryGranularity
   ) throws IOException
   {
     progress.start();
@@ -201,12 +201,14 @@ public class IndexMergerV9 implements IndexMerger
       }
       segmentMetadata = Metadata.merge(
           metadataList,
-          combiningMetricAggs
+          combiningMetricAggs,
+          targetQueryGranularity
       );
     } else {
       segmentMetadata = Metadata.merge(
           metadataList,
-          null
+          null,
+          targetQueryGranularity
       );
     }
 
@@ -265,10 +267,10 @@ public class IndexMergerV9 implements IndexMerger
           handlers,
           mergers,
           materializedMerge,
-          granularity
+          targetQueryGranularity
       );
       closer.register(timeAndDimsIterator);
-      final GenericColumnSerializer timeWriter = setupTimeWriter(segmentWriteOutMedium, indexSpec);
+      final GenericColumnSerializer timeWriter = setupTimeWriter(segmentWriteOutMedium, indexSpec, targetQueryGranularity);
       final ArrayList<GenericColumnSerializer> metricWriters =
           setupMetricsWriters(segmentWriteOutMedium, mergedMetrics, metricsValueTypes, metricTypeNames, indexSpec);
       List<IntBuffer> rowNumConversions = mergeIndexesAndWriteColumns(
@@ -640,13 +642,14 @@ public class IndexMergerV9 implements IndexMerger
     return rowNumConversions;
   }
 
-  private GenericColumnSerializer setupTimeWriter(SegmentWriteOutMedium segmentWriteOutMedium, IndexSpec indexSpec)
+  private GenericColumnSerializer setupTimeWriter(SegmentWriteOutMedium segmentWriteOutMedium, IndexSpec indexSpec, Granularity targetGran)
       throws IOException
   {
     GenericColumnSerializer timeWriter = createLongColumnSerializer(
         segmentWriteOutMedium,
         "little_end_time",
-        indexSpec
+        indexSpec,
+        targetGran
     );
     // we will close this writer after we added all the timestamps
     timeWriter.open();
@@ -668,7 +671,7 @@ public class IndexMergerV9 implements IndexMerger
       GenericColumnSerializer writer;
       switch (type) {
         case LONG:
-          writer = createLongColumnSerializer(segmentWriteOutMedium, metric, indexSpec);
+          writer = createLongColumnSerializer(segmentWriteOutMedium, metric, indexSpec, null);
           break;
         case FLOAT:
           writer = createFloatColumnSerializer(segmentWriteOutMedium, metric, indexSpec);
@@ -697,8 +700,8 @@ public class IndexMergerV9 implements IndexMerger
   static GenericColumnSerializer createLongColumnSerializer(
       SegmentWriteOutMedium segmentWriteOutMedium,
       String columnName,
-      IndexSpec indexSpec
-  )
+      IndexSpec indexSpec,
+      @Nullable Granularity targetGran)
   {
     // If using default values for null use LongColumnSerializer to allow rollback to previous versions.
     if (NullHandling.replaceWithDefault()) {
@@ -707,7 +710,8 @@ public class IndexMergerV9 implements IndexMerger
           segmentWriteOutMedium,
           columnName,
           indexSpec.getMetricCompression(),
-          indexSpec.getLongEncoding()
+          indexSpec.getLongEncoding(),
+          targetGran
       );
     } else {
       return LongColumnSerializerV2.create(
@@ -716,7 +720,8 @@ public class IndexMergerV9 implements IndexMerger
           columnName,
           indexSpec.getMetricCompression(),
           indexSpec.getLongEncoding(),
-          indexSpec.getBitmapSerdeFactory()
+          indexSpec.getBitmapSerdeFactory(),
+          targetGran
       );
     }
   }

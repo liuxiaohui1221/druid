@@ -29,8 +29,7 @@ import org.junit.runners.Parameterized;
 @RunWith(Parameterized.class)
 public class RoaringBitmapIndexMergerV9TableViewTest extends IndexMergerTestBaseForTableView
 {
-  public RoaringBitmapIndexMergerV9TableViewTest(
-  )
+  public RoaringBitmapIndexMergerV9TableViewTest()
   {
     super(
         new RoaringBitmapSerdeFactory(null),
