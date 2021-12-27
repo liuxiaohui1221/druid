@@ -37,6 +37,7 @@ import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.UOE;
 import org.apache.druid.java.util.common.concurrent.Execs;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.query.Query;
@@ -633,6 +634,12 @@ public class UnifiedIndexerAppenderatorsManager implements AppenderatorsManager
     }
 
     @Override
+    public File merge(List<IndexableAdapter> indexes, boolean rollup, List<String> targetDimensions, AggregatorFactory[] metricAggs, File outDir, IndexSpec indexSpec, int maxColumnsToMerge, boolean materializedMerge, Granularity granularity) throws IOException
+    {
+      return null;
+    }
+
+    @Override
     public File convert(
         File inDir,
         File outDir,
@@ -692,6 +699,18 @@ public class UnifiedIndexerAppenderatorsManager implements AppenderatorsManager
     )
     {
       throw new UOE(ERROR_MSG);
+    }
+
+    @Override
+    public File mergeQueryableIndex(List<QueryableIndex> indexes, boolean rollup, List<String> targetDimensions, AggregatorFactory[] metricAggs, File outDir, IndexSpec indexSpec, @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory, int maxColumnsToMerge, boolean materializedMerge, Granularity granularity) throws IOException
+    {
+      return null;
+    }
+
+    @Override
+    public File mergeQueryableIndex(List<QueryableIndex> indexes, boolean rollup, List<String> targetDimensions, AggregatorFactory[] metricAggs, File outDir, IndexSpec indexSpec, ProgressIndicator progress, @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory, int maxColumnsToMerge, boolean materializedMerge, Granularity granularity) throws IOException
+    {
+      return null;
     }
   }
 }
