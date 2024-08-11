@@ -30,4 +30,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 })
 public interface IOConfig
 {
+  default boolean isDropExisting()
+  {
+    return false;
+  }
 }

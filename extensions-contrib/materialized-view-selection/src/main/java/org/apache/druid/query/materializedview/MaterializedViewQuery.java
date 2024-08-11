@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Ordering;
+import org.apache.druid.client.materializedview.DataSourceOptimizer;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.DataSource;
@@ -80,7 +81,8 @@ public class MaterializedViewQuery<T> implements Query<T>
     return query;
   }
 
-  public DataSourceOptimizer getOptimizer()
+  @Override
+  public MaterializedViewOptimizer getOptimizer()
   {
     return optimizer;
   }
@@ -186,6 +188,12 @@ public class MaterializedViewQuery<T> implements Query<T>
   public Query<T> withSubQueryId(String subQueryId)
   {
     return new MaterializedViewQuery<>(query.withSubQueryId(subQueryId), optimizer);
+  }
+
+  @Override
+  public Query<T> withOverriddenGranularity(Granularity granularity)
+  {
+    return query.withOverriddenGranularity(granularity);
   }
 
   @Nullable

@@ -55,7 +55,7 @@ public class MaterializedViewSelectionDruidModule implements DruidModule
         .addBinding(MaterializedViewQuery.class)
         .to(MaterializedViewQueryQueryToolChest.class);
     LifecycleModule.register(binder, DerivativeDataSourceManager.class);
-    binder.bind(DataSourceOptimizer.class).in(Singleton.class);
+//    binder.bind(DataSourceOptimizer.class).in(Singleton.class);
     MetricsModule.register(binder, DataSourceOptimizerMonitor.class);
     JsonConfigProvider.bind(binder, "druid.manager.derivatives", MaterializedViewConfig.class);
   }

@@ -26,6 +26,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
@@ -53,6 +54,7 @@ import org.apache.druid.metadata.ReplaceTaskLock;
 import org.apache.druid.segment.realtime.appenderator.SegmentIdWithShardSpec;
 import org.joda.time.DateTime;
 import org.joda.time.Interval;
+import org.joda.time.base.AbstractInterval;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -859,6 +861,38 @@ public class TaskLockbox
     }
   }
 
+  /**
+   * get all no lock interval
+   *
+   * @param dataSource
+   * @param interval
+   * @return
+   */
+  public List<Interval> getNonLockIntervalSnapshots(String dataSource, Interval interval)
+  {
+    List<Interval> intervals = new ArrayList<>();
+    DateTime preTime = interval.getStart();
+    DateTime time = preTime.plusHours(1);
+    DateTime startTime = preTime;
+    while (time.isBefore(interval.getEnd())) {
+      final Interval tempInterval = new Interval(preTime, time);
+      if (findLockPossesOverlapsInterval(dataSource, tempInterval).size() > 0) {
+        if (startTime.getMillis() != preTime.getMillis()) {
+          intervals.add(new Interval(startTime, preTime));
+        }
+        startTime = time;
+      }
+      preTime = time;
+      time = time.plusHours(1);
+    }
+    if (startTime.isBefore(interval.getEnd())) {
+      intervals.add(new Interval(startTime, interval.getEnd()));
+    }
+    log.info("DataSource[%s] all unlocked intervals[%s],size[%s]",
+             dataSource, Iterables.transform(intervals, AbstractInterval::toString), intervals.size()
+    );
+    return intervals;
+  }
   /**
    * Return the currently-active locks for some task.
    *

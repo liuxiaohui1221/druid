@@ -54,6 +54,7 @@ import org.apache.druid.java.util.common.guava.ParallelMergeCombiningSequence;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;
 import org.apache.druid.java.util.emitter.EmittingLogger;
+import org.apache.druid.query.BaseQuery;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.query.BrokerParallelMergeConfig;
 import org.apache.druid.query.BySegmentResultValueClass;
@@ -74,6 +75,7 @@ import org.apache.druid.query.aggregation.MetricManipulatorFns;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.filter.DimFilterUtils;
 import org.apache.druid.query.planning.DataSourceAnalysis;
+import org.apache.druid.query.spec.MultipleSpecificSegmentSpec;
 import org.apache.druid.query.spec.QuerySegmentSpec;
 import org.apache.druid.server.QueryResource;
 import org.apache.druid.server.QueryScheduler;
@@ -86,6 +88,7 @@ import org.apache.druid.timeline.TimelineObjectHolder;
 import org.apache.druid.timeline.VersionedIntervalTimeline;
 import org.apache.druid.timeline.VersionedIntervalTimeline.PartitionChunkEntry;
 import org.apache.druid.timeline.partition.PartitionChunk;
+import org.apache.druid.timeline.partition.PartitionHolder;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
@@ -185,7 +188,22 @@ public class CachingClusteredClient implements QuerySegmentWalker
       @Override
       public Sequence<T> run(final QueryPlus<T> queryPlus, final ResponseContext responseContext)
       {
-        return CachingClusteredClient.this.run(queryPlus, responseContext, timeline -> timeline, false);
+        boolean decideSpecificSegments = false;
+        UnaryOperator<TimelineLookup<String, ServerSelector>> serverSelectorForSpecificSegments = timeline -> timeline;
+        if (queryPlus.getQuery() instanceof BaseQuery) {
+          BaseQuery baseQuery = (BaseQuery) queryPlus.getQuery();
+          decideSpecificSegments = baseQuery.getQuerySegmentSpec() instanceof MultipleSpecificSegmentSpec;
+          if (decideSpecificSegments) {
+            MultipleSpecificSegmentSpec multipleSpecificSegmentSpec = (MultipleSpecificSegmentSpec) baseQuery.getQuerySegmentSpec();
+            serverSelectorForSpecificSegments = getServerSelectorForSpecificSegments(multipleSpecificSegmentSpec.getDescriptors());
+          }
+        }
+        return CachingClusteredClient.this.run(
+            queryPlus,
+            responseContext,
+            serverSelectorForSpecificSegments,
+            decideSpecificSegments
+        );
       }
     };
   }
@@ -216,6 +234,23 @@ public class CachingClusteredClient implements QuerySegmentWalker
     responseContext.addRemainingResponse(query.getMostSpecificId(), numQueryServers);
   }
 
+  public static UnaryOperator<TimelineLookup<String, ServerSelector>> getServerSelectorForSpecificSegments(final Iterable<SegmentDescriptor> specs)
+  {
+    return timeline -> {
+      final VersionedIntervalTimeline<String, ServerSelector> timeline2 =
+          new VersionedIntervalTimeline<>(Ordering.natural());
+      for (SegmentDescriptor spec : specs) {
+        final PartitionHolder<ServerSelector> entry = timeline.findEntry(spec.getInterval(), spec.getVersion());
+        if (entry != null) {
+          final PartitionChunk<ServerSelector> chunk = entry.getChunk(spec.getPartitionNumber());
+          if (chunk != null) {
+            timeline2.add(spec.getInterval(), spec.getVersion(), chunk);
+          }
+        }
+      }
+      return timeline2;
+    };
+  }
   @Override
   public <T> QueryRunner<T> getQueryRunnerForSegments(final Query<T> query, final Iterable<SegmentDescriptor> specs)
   {
@@ -227,7 +262,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
         return CachingClusteredClient.this.run(
             queryPlus,
             responseContext,
-            new TimelineConverter(specs),
+            getServerSelectorForSpecificSegments(specs),
             true
         );
       }

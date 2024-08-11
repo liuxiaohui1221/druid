@@ -539,7 +539,7 @@ public class DruidInputSource extends AbstractInputSource implements SplittableI
       for (PartitionChunk<DataSegment> chunk : holder.getObject()) {
         windowedSegmentIds.computeIfAbsent(
             chunk.getObject(),
-            segment -> new WindowedSegmentId(segment.getId().toString(), new ArrayList<>())
+            segment -> new WindowedSegmentId(segment.getId().toString(), new ArrayList<>(), segment.getSize())
         ).addInterval(holder.getInterval());
       }
     }

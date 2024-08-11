@@ -59,6 +59,7 @@ import org.apache.druid.query.ResourceLimitExceededException;
 import org.apache.druid.query.Result;
 import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.TruncatedResponseContextException;
+import org.apache.druid.query.materializedview.NoopOptimizer;
 import org.apache.druid.query.timeboundary.TimeBoundaryResultValue;
 import org.apache.druid.server.initialization.ServerConfig;
 import org.apache.druid.server.log.TestRequestLogger;
@@ -239,7 +240,8 @@ public class QueryResourceTest
         new AuthConfig(),
         null,
         responseContextConfig,
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
   }
 
@@ -274,7 +276,8 @@ public class QueryResourceTest
         new AuthConfig(),
         null,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
 
     expectPermissiveHappyPathAuth();
@@ -348,7 +351,8 @@ public class QueryResourceTest
         new AuthConfig(),
         null,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
 
     expectPermissiveHappyPathAuth();
@@ -440,7 +444,8 @@ public class QueryResourceTest
         new AuthConfig(),
         null,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
 
     expectPermissiveHappyPathAuth();
@@ -481,7 +486,8 @@ public class QueryResourceTest
         new AuthConfig(),
         null,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
 
     expectPermissiveHappyPathAuth();
@@ -718,7 +724,8 @@ public class QueryResourceTest
         new AuthConfig(),
         authMapper,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
 
 
@@ -793,7 +800,8 @@ public class QueryResourceTest
         new AuthConfig(),
         null,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
     expectPermissiveHappyPathAuth();
 
@@ -889,7 +897,8 @@ public class QueryResourceTest
         new AuthConfig(),
         authMapper,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
 
     final String queryString = "{\"queryType\":\"timeBoundary\", \"dataSource\":\"allow\","
@@ -996,7 +1005,8 @@ public class QueryResourceTest
         new AuthConfig(),
         authMapper,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
 
     final String queryString = "{\"queryType\":\"timeBoundary\", \"dataSource\":\"allow\","
@@ -1308,7 +1318,8 @@ public class QueryResourceTest
         new AuthConfig(),
         null,
         ResponseContextConfig.newConfig(true),
-        DRUID_NODE
+        DRUID_NODE,
+        new NoopOptimizer()
     );
   }
 

@@ -29,8 +29,12 @@ import org.apache.druid.query.QuerySegmentWalker;
 import org.apache.druid.query.SegmentDescriptor;
 import org.joda.time.Interval;
 
+import java.util.Comparator;
+
+import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  */
@@ -45,7 +49,32 @@ public class MultipleSpecificSegmentSpec implements QuerySegmentSpec
       @JsonProperty("segments") List<SegmentDescriptor> descriptors
   )
   {
+    this(descriptors, null);
+  }
+
+  @JsonCreator
+  public MultipleSpecificSegmentSpec(
+      @JsonProperty("segments") List<SegmentDescriptor> descriptors,
+      @JsonProperty("intervals") @Nullable List<Interval> intervals
+  )
+  {
+    descriptors.sort(new SegmentDescriptorComparator());
     this.descriptors = descriptors;
+    if (intervals != null) {
+      this.intervals = JodaUtils.condenseIntervals(
+          Iterables.transform(
+              descriptors,
+              input -> {
+                for (Interval uInterval : intervals) {
+                  if (uInterval.overlaps(input.getInterval())) {
+                    return uInterval.overlap(input.getInterval());
+                  }
+                }
+                return input.getInterval();
+              }
+          )
+      );
+    }
   }
 
   @JsonProperty("segments")
@@ -55,6 +84,7 @@ public class MultipleSpecificSegmentSpec implements QuerySegmentSpec
   }
 
   @Override
+  @JsonProperty("intervals")
   public List<Interval> getIntervals()
   {
     if (intervals != null) {
@@ -82,6 +112,7 @@ public class MultipleSpecificSegmentSpec implements QuerySegmentSpec
   {
     return "MultipleSpecificSegmentSpec{" +
            "descriptors=" + descriptors +
+           "queryIntervals=" + intervals +
            '}';
   }
 
@@ -95,12 +126,22 @@ public class MultipleSpecificSegmentSpec implements QuerySegmentSpec
       return false;
     }
     MultipleSpecificSegmentSpec that = (MultipleSpecificSegmentSpec) o;
-    return Objects.equals(descriptors, that.descriptors);
+    return Objects.equals(descriptors, that.descriptors) && Objects.equals(intervals, that.intervals);
   }
 
   @Override
   public int hashCode()
   {
-    return Objects.hash(descriptors);
+    return Objects.hash(descriptors, intervals);
+  }
+
+  static class SegmentDescriptorComparator implements Comparator<SegmentDescriptor>
+  {
+    @Override
+    public int compare(SegmentDescriptor seg1, SegmentDescriptor seg2)
+    {
+      return seg1.toString().compareTo(seg2.toString());
+    }
   }
 }
+

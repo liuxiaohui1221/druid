@@ -27,8 +27,8 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningScheduledExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.inject.Inject;
+import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.guice.ManageLifecycle;
-import org.apache.druid.indexing.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.Intervals;
@@ -49,6 +49,7 @@ import org.skife.jdbi.v2.StatementContext;
 import org.skife.jdbi.v2.tweak.HandleCallback;
 
 import java.sql.ResultSet;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -184,9 +185,9 @@ public class DerivativeDataSourceManager
           DerivativeDataSourceMetadata metadata = derivatives.rhs;
           String baseDataSource = metadata.getBaseDataSource();
           long avgSizePerGranularity = getAvgSizePerGranularity(name);
-          log.info("find derivatives: {bases=%s, derivative=%s, dimensions=%s, metrics=%s, avgSize=%s}", 
-              baseDataSource, name, metadata.getDimensions(), metadata.getMetrics(), avgSizePerGranularity);
-          return new DerivativeDataSource(name, baseDataSource, metadata.getColumns(), avgSizePerGranularity);
+//          log.info("find derivatives: {bases=%s, derivative=%s, dimensions=%s, metrics=%s, avgSize=%s}",
+//              baseDataSource, name, metadata.getDimensions(), metadata.getMetrics(), avgSizePerGranularity);
+          return new DerivativeDataSource(name, baseDataSource, Collections.<String>emptySet(), avgSizePerGranularity);
         })
         .filter(derivatives -> derivatives.getAvgSizeBasedGranularity() > 0)
         .collect(Collectors.toList());

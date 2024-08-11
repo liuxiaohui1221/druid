@@ -36,6 +36,7 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 /**
  */
@@ -50,7 +51,7 @@ public class CuratorTestBase
   protected void setupServerAndCurator() throws Exception
   {
     server = new TestingServer();
-    timing = new Timing();
+    timing = new Timing(30, TimeUnit.SECONDS, 1);
     curator = CuratorFrameworkFactory
         .builder()
         .connectString(server.getConnectString())

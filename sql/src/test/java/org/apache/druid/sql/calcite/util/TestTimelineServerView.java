@@ -92,7 +92,10 @@ public class TestTimelineServerView implements TimelineServerView
   }
 
   @Override
-  public Optional<? extends TimelineLookup<String, ServerSelector>> getTimeline(DataSourceAnalysis analysis)
+  public Optional<? extends TimelineLookup<String, ServerSelector>> getTimeline(
+      DataSourceAnalysis analysis,
+      boolean chooseMaterialized
+  )
   {
     throw new UnsupportedOperationException();
   }

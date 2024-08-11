@@ -27,11 +27,13 @@ import com.google.common.io.Files;
 import com.google.common.primitives.Ints;
 import org.apache.druid.guice.annotations.PublicApi;
 import org.apache.druid.java.util.common.IOE;
+import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.timeline.DataSegment;
 import org.joda.time.Interval;
-
 import javax.annotation.Nullable;
+
+import org.apache.druid.common.guava.SettableSupplier;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -106,6 +108,24 @@ public class SegmentUtils
     return intervalToSegments;
   }
 
+  public static Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> groupDerivativeSegmentsByInterval(
+      Collection<DataSegment> segments
+  )
+  {
+    final Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> intervalToSegments = new HashMap<>();
+    segments.forEach(
+        segment -> {
+          Pair<SettableSupplier<Boolean>, List<DataSegment>> settableSupplierListPair = intervalToSegments.computeIfAbsent(
+              segment.getInterval(),
+              k -> new Pair<>(new SettableSupplier<>(false), new
+                  ArrayList<>())
+          );
+          settableSupplierListPair.lhs.set(settableSupplierListPair.lhs.get() || segment.getMaterializedSpec() != null);
+          settableSupplierListPair.rhs.add(segment);
+        }
+    );
+    return intervalToSegments;
+  }
   private SegmentUtils()
   {
     // no instantiation

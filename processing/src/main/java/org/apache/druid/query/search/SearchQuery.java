@@ -80,6 +80,11 @@ public class SearchQuery extends BaseQuery<Result<SearchResultValue>>
   }
 
   @Override
+  public SearchQuery withOverriddenGranularity(Granularity granularity)
+  {
+    return Druids.SearchQueryBuilder.copy(this).granularity(granularity).build();
+  }
+  @Override
   public boolean hasFilters()
   {
     return dimFilter != null;

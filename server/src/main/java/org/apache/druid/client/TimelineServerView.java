@@ -45,8 +45,17 @@ public interface TimelineServerView extends ServerView
    *
    * @throws IllegalStateException if 'analysis' does not represent a scan-based datasource of a single table
    */
-  Optional<? extends TimelineLookup<String, ServerSelector>> getTimeline(DataSourceAnalysis analysis);
+  Optional<? extends TimelineLookup<String, ServerSelector>> getTimeline(
+      DataSourceAnalysis analysis,
+      boolean chooseMaterialized
+  );
 
+  default Optional<? extends TimelineLookup<String, ServerSelector>> getTimeline(
+      DataSourceAnalysis analysis
+  )
+  {
+    return getTimeline(analysis, false);
+  }
   /**
    * Returns a list of {@link ImmutableDruidServer}
    */

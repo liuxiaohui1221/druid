@@ -267,6 +267,11 @@ public class GroupByQuery extends BaseQuery<ResultRow>
     return subtotalsSpec;
   }
 
+  @Override
+  public Query<ResultRow> withOverriddenGranularity(Granularity granularity)
+  {
+    return new Builder(this).setGranularity(granularity).build();
+  }
   @JsonProperty
   @Override
   @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = VirtualColumns.JsonIncludeFilter.class)

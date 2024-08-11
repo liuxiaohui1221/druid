@@ -35,6 +35,9 @@ import org.apache.druid.audit.AuditManager;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.TaskMaster;
 import org.apache.druid.indexing.overlord.http.security.SupervisorResourceFilter;
+import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisorIOConfig;
+import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisorSpec;
+import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.UOE;
 import org.apache.druid.segment.incremental.ParseExceptionReport;
@@ -47,6 +50,7 @@ import org.apache.druid.server.security.ForbiddenException;
 import org.apache.druid.server.security.Resource;
 import org.apache.druid.server.security.ResourceAction;
 import org.apache.druid.server.security.ResourceType;
+import org.joda.time.DateTime;
 
 import javax.annotation.Nullable;
 import javax.servlet.http.HttpServletRequest;
@@ -268,6 +272,44 @@ public class SupervisorResource
     );
   }
 
+  @GET
+  @Path("/{id}/minIngestionTime")
+  @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(SupervisorResourceFilter.class)
+  public Response getMinTimeFromSpec(@PathParam("id") final String id)
+  {
+    return asLeaderWithSupervisorManager(
+        manager -> {
+          Optional<SupervisorSpec> spec = manager.getSupervisorSpec(id);
+          if (!spec.isPresent()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                           .entity(ImmutableMap.of("error", StringUtils.format("[%s] does not exist", id)))
+                           .build();
+          } else if (!(spec.get() instanceof SeekableStreamSupervisorSpec)) {
+            Response.status(Response.Status.NOT_FOUND)
+                    .entity(ImmutableMap.of(
+                        "error",
+                        StringUtils.format(
+                            "[%s] spec does not instanceof SeekableStreamSupervisorSpec",
+                            id
+                        )
+                    ))
+                    .build();
+          }
+          SeekableStreamSupervisorSpec streamSupervisorSpec = (SeekableStreamSupervisorSpec) (spec.get());
+          final SeekableStreamSupervisorIOConfig ioConfig = streamSupervisorSpec.getIoConfig();
+          Optional<DateTime> minimumMessageTime;
+          if (ioConfig.getLateMessageRejectionStartDateTime().isPresent()) {
+            minimumMessageTime = Optional.of(ioConfig.getLateMessageRejectionStartDateTime().get());
+          } else {
+            minimumMessageTime = (ioConfig.getLateMessageRejectionPeriod().isPresent() ? Optional.of(
+                DateTimes.nowUtc().minus(ioConfig.getLateMessageRejectionPeriod().get())
+            ) : Optional.absent());
+          }
+          return Response.ok(minimumMessageTime.get().getMillis()).build();
+        }
+    );
+  }
   @GET
   @Path("/{id}/status")
   @Produces(MediaType.APPLICATION_JSON)

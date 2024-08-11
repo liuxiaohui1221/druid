@@ -38,7 +38,7 @@ public class Tasks
   public static final int DEFAULT_REALTIME_TASK_PRIORITY = 75;
   public static final int DEFAULT_BATCH_INDEX_TASK_PRIORITY = 50;
   public static final int DEFAULT_MERGE_TASK_PRIORITY = 25;
-
+  public static final String CONTEXT_KEY_STORE_MATERIALIZED_SEGMENTS = "storeMVSegment";
   static {
     Verify.verify(DEFAULT_MERGE_TASK_PRIORITY == DataSourceCompactionConfig.DEFAULT_COMPACTION_TASK_PRIORITY);
   }

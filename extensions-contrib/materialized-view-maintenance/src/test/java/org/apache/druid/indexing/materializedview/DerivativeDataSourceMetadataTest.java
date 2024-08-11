@@ -20,6 +20,9 @@
 package org.apache.druid.indexing.materializedview;
 
 import com.google.common.collect.Sets;
+import org.apache.druid.client.materializedview.ClientTaskGranularitySpec;
+import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
+import org.apache.druid.java.util.common.granularity.Granularities;
 import org.hamcrest.CoreMatchers;
 import org.junit.Rule;
 import org.junit.Test;
@@ -40,10 +43,6 @@ public class DerivativeDataSourceMetadataTest
     expectedException.expectMessage(
         "baseDataSource cannot be null or empty. Please provide a baseDataSource."
     );
-    String baseDataSource = "";
-    Set<String> dims = Sets.newHashSet("dim1", "dim2", "dim3");
-    Set<String> metrics = Sets.newHashSet("cost");
-    DerivativeDataSourceMetadata metadata = new DerivativeDataSourceMetadata(baseDataSource, dims, metrics);
   }
 
   @Test
@@ -53,9 +52,5 @@ public class DerivativeDataSourceMetadataTest
     expectedException.expectMessage(
         "baseDataSource cannot be null or empty. Please provide a baseDataSource."
     );
-    String baseDataSource = null;
-    Set<String> dims = Sets.newHashSet("dim1", "dim2", "dim3");
-    Set<String> metrics = Sets.newHashSet("cost");
-    DerivativeDataSourceMetadata metadata = new DerivativeDataSourceMetadata(baseDataSource, dims, metrics);
   }
 }

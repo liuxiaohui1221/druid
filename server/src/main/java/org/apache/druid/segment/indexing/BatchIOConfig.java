@@ -38,6 +38,7 @@ public interface BatchIOConfig extends IOConfig
   @JsonProperty
   boolean isAppendToExisting();
 
+  @Override
   @JsonProperty
   boolean isDropExisting();
 }

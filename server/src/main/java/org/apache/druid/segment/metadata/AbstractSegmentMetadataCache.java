@@ -897,7 +897,8 @@ public abstract class AbstractSegmentMetadataCache<T extends DataSourceInformati
 
     final MultipleSpecificSegmentSpec querySegmentSpec = new MultipleSpecificSegmentSpec(
         StreamSupport.stream(segments.spliterator(), false)
-                     .map(SegmentId::toDescriptor).collect(Collectors.toList())
+                     .map(SegmentId::toDescriptor).collect(Collectors.toList()),
+        null
     );
 
     final SegmentMetadataQuery segmentMetadataQuery = new SegmentMetadataQuery(

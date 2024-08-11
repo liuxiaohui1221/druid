@@ -110,6 +110,8 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
   @Nullable
   private final CompactionState lastCompactionState;
   private final long size;
+  @Nullable
+  protected MaterializedSpec materializedSpec;
 
   @VisibleForTesting
   public DataSegment(
@@ -185,9 +187,70 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
         metrics,
         shardSpec,
         lastCompactionState,
+        null,
         binaryVersion,
         size,
         PruneSpecsHolder.DEFAULT
+    );
+  }
+
+  public DataSegment(
+      String dataSource,
+      Interval interval,
+      String version,
+      Map<String, Object> loadSpec,
+      List<String> dimensions,
+      List<String> metrics,
+      ShardSpec shardSpec,
+      @Nullable CompactionState lastCompactionState,
+      @Nullable MaterializedSpec materializedSpec,
+      Integer binaryVersion,
+      long size
+  )
+  {
+    this(
+        dataSource,
+        interval,
+        version,
+        loadSpec,
+        dimensions,
+        metrics,
+        shardSpec,
+        lastCompactionState,
+        materializedSpec,
+        binaryVersion,
+        size,
+        PruneSpecsHolder.DEFAULT
+    );
+  }
+
+  public DataSegment(
+      String dataSource,
+      Interval interval,
+      String version,
+      Map<String, Object> loadSpec,
+      List<String> dimensions,
+      List<String> metrics,
+      ShardSpec shardSpec,
+      @Nullable CompactionState lastCompactionState,
+      Integer binaryVersion,
+      long size,
+      @JacksonInject PruneSpecsHolder pruneSpecsHolder
+  )
+  {
+    this(
+        dataSource,
+        interval,
+        version,
+        loadSpec,
+        dimensions,
+        metrics,
+        shardSpec,
+        lastCompactionState,
+        null,
+        binaryVersion,
+        size,
+        pruneSpecsHolder
     );
   }
 
@@ -208,6 +271,7 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
           List<String> metrics,
       @JsonProperty("shardSpec") @Nullable ShardSpec shardSpec,
       @JsonProperty("lastCompactionState") @Nullable CompactionState lastCompactionState,
+      @JsonProperty("materializedSpec") @Nullable MaterializedSpec materializedSpec,
       @JsonProperty("binaryVersion") Integer binaryVersion,
       @JsonProperty("size") long size,
       @JacksonInject PruneSpecsHolder pruneSpecsHolder
@@ -227,6 +291,7 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
     this.binaryVersion = binaryVersion;
     Preconditions.checkArgument(size >= 0);
     this.size = size;
+    this.materializedSpec = materializedSpec;
   }
 
   @Nullable
@@ -347,6 +412,12 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
     return id;
   }
 
+  @JsonProperty
+  public MaterializedSpec getMaterializedSpec()
+  {
+    return materializedSpec;
+  }
+
   public boolean isTombstone()
   {
     return getShardSpec().getType().equals(ShardSpec.Type.TOMBSTONE);
@@ -441,6 +512,11 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
     return builder(this).lastCompactionState(compactionState).build();
   }
 
+  public DataSegment withStoreMaterializedSegment(MaterializedSpec materializedSpec)
+  {
+    return builder(this).storeMaterializedSegment(materializedSpec).build();
+  }
+
   @Override
   public int compareTo(DataSegment dataSegment)
   {
@@ -474,6 +550,7 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
            ", shardSpec=" + shardSpec +
            ", lastCompactionState=" + lastCompactionState +
            ", size=" + size +
+           ", materializedSpec=" + materializedSpec +
            '}';
   }
 
@@ -497,6 +574,7 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
     private List<String> metrics;
     private ShardSpec shardSpec;
     private CompactionState lastCompactionState;
+    private MaterializedSpec materializedSpec;
     private Integer binaryVersion;
     private long size;
 
@@ -519,6 +597,7 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
       this.metrics = segment.getMetrics();
       this.shardSpec = segment.getShardSpec();
       this.lastCompactionState = segment.getLastCompactionState();
+      this.materializedSpec = segment.getMaterializedSpec();
       this.binaryVersion = segment.getBinaryVersion();
       this.size = segment.getSize();
     }
@@ -571,6 +650,12 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
       return this;
     }
 
+    public Builder storeMaterializedSegment(MaterializedSpec materializedSpec)
+    {
+      this.materializedSpec = materializedSpec;
+      return this;
+    }
+
     public Builder binaryVersion(Integer binaryVersion)
     {
       this.binaryVersion = binaryVersion;
@@ -600,6 +685,7 @@ public class DataSegment implements Comparable<DataSegment>, Overshadowable<Data
           metrics,
           shardSpec,
           lastCompactionState,
+          materializedSpec,
           binaryVersion,
           size
       );

@@ -20,8 +20,7 @@
 package org.apache.druid.metadata.storage.mysql;
 
 import com.google.common.base.Supplier;
-import com.mysql.jdbc.exceptions.MySQLTransactionRollbackException;
-import com.mysql.jdbc.exceptions.MySQLTransientException;
+import com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException;
 import org.apache.druid.metadata.MetadataStorageConnectorConfig;
 import org.apache.druid.metadata.MetadataStorageTablesConfig;
 import org.apache.druid.segment.metadata.CentralizedDatasourceSchemaConfig;
@@ -82,7 +81,7 @@ public class MySQLConnectorTest
         MYSQL_DRIVER_CONFIG,
         centralizedDatasourceSchemaConfig
     );
-    Assert.assertTrue(connector.connectorIsTransientException(new MySQLTransientException()));
+    Assert.assertTrue(connector.connectorIsTransientException(new MySQLTransactionRollbackException()));
     Assert.assertTrue(connector.connectorIsTransientException(new MySQLTransactionRollbackException()));
     Assert.assertTrue(
         connector.connectorIsTransientException(new SQLException("some transient failure", "s0", 1317))
@@ -107,7 +106,7 @@ public class MySQLConnectorTest
         centralizedDatasourceSchemaConfig
     );
     // no vendor specific for MariaDb, so should always be false
-    Assert.assertFalse(connector.connectorIsTransientException(new MySQLTransientException()));
+    Assert.assertFalse(connector.connectorIsTransientException(new MySQLTransactionRollbackException()));
     Assert.assertFalse(
         connector.connectorIsTransientException(new SQLException("some transient failure", "s0", 1317))
     );
@@ -143,7 +142,7 @@ public class MySQLConnectorTest
         connector.isRootCausePacketTooBigException(new SQLTransientException())
     );
     Assert.assertFalse(
-        connector.isRootCausePacketTooBigException(new MySQLTransientException())
+        connector.isRootCausePacketTooBigException(new MySQLTransactionRollbackException())
     );
   }
 

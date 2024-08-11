@@ -68,6 +68,7 @@ public class ScanQuerySpecTest
         Arrays.asList("market", "quality", "index"),
         null,
         null,
+        null,
         null
     );
 
@@ -101,6 +102,7 @@ public class ScanQuerySpecTest
         null,
         null,
         Arrays.asList("market", "quality", "index", "__time"),
+        null,
         null,
         null,
         null
@@ -142,6 +144,7 @@ public class ScanQuerySpecTest
         Arrays.asList("market", "quality", "index", "__time"),
         null,
         null,
+        null,
         null
     );
 
@@ -170,6 +173,7 @@ public class ScanQuerySpecTest
         null,
         null,
         Arrays.asList("market", "quality", "index"),
+        null,
         null,
         null,
         null

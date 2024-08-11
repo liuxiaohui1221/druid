@@ -932,8 +932,9 @@ public class IndexTask extends AbstractBatchIndexTask implements ChatHandler, Pe
           Tasks.DEFAULT_STORE_COMPACTION_STATE
       );
       final Function<Set<DataSegment>, Set<DataSegment>> annotateFunction =
-          addCompactionStateToSegments(
+          compactionStateAndMaterializedAnnotateFunction(
               storeCompactionState,
+              null,
               toolbox,
               ingestionSchema
           );
@@ -1250,7 +1251,7 @@ public class IndexTask extends AbstractBatchIndexTask implements ChatHandler, Pe
 
     // null if all partitionsSpec related params are null. see getDefaultPartitionsSpec() for details.
     @Nullable
-    private final PartitionsSpec partitionsSpec;
+    private PartitionsSpec partitionsSpec;
     private final IndexSpec indexSpec;
     private final IndexSpec indexSpecForIntermediatePersists;
     private final File basePersistDirectory;
@@ -1262,7 +1263,7 @@ public class IndexTask extends AbstractBatchIndexTask implements ChatHandler, Pe
      * that no more data will be appended in the future. As a result, in perfect rollup mode,
      * {@link HashBasedNumberedShardSpec} is used for shards.
      */
-    private final boolean forceGuaranteedRollup;
+    private boolean forceGuaranteedRollup;
     private final boolean reportParseExceptions;
     private final long pushTimeout;
     private final boolean logParseExceptions;
@@ -1505,6 +1506,15 @@ public class IndexTask extends AbstractBatchIndexTask implements ChatHandler, Pe
       );
     }
 
+    public void setPartitionsSpec(PartitionsSpec partitionsSpec)
+    {
+      this.partitionsSpec = partitionsSpec;
+    }
+
+    public void setForceGuaranteedRollup(boolean forceGuaranteedRollup)
+    {
+      this.forceGuaranteedRollup = forceGuaranteedRollup;
+    }
     @JsonProperty
     @Override
     public AppendableIndexSpec getAppendableIndexSpec()

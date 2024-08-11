@@ -498,5 +498,11 @@ public class QueryContextTest
     {
       return new LegacyContextQuery(contextOverride);
     }
+
+    @Override
+    public Query<Integer> withOverriddenGranularity(Granularity granularity)
+    {
+      return this;
+    }
   }
 }

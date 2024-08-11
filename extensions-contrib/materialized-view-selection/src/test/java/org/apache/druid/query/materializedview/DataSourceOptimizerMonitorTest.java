@@ -19,6 +19,8 @@
 
 package org.apache.druid.query.materializedview;
 
+import org.apache.druid.client.materializedview.DataSourceOptimizer;
+import org.apache.druid.client.materializedview.DataSourceOptimizerStats;
 import org.apache.druid.java.util.metrics.StubServiceEmitter;
 import org.easymock.EasyMock;
 import org.junit.Test;

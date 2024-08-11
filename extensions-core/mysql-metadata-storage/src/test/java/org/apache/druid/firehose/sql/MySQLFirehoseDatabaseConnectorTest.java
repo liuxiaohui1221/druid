@@ -53,7 +53,7 @@ public class MySQLFirehoseDatabaseConnectorTest
   @Before
   public void setup()
   {
-    Mockito.doReturn("com.mysql.jdbc.Driver").when(mySQLConnectorDriverConfig).getDriverClassName();
+    Mockito.doReturn("com.mysql.cj.jdbc.Driver").when(mySQLConnectorDriverConfig).getDriverClassName();
   }
 
   @Rule

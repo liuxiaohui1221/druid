@@ -51,4 +51,10 @@ public class RealtimeIOConfig implements IOConfig
   {
     return plumberSchool;
   }
+
+  @Override
+  public boolean isDropExisting()
+  {
+    return false;
+  }
 }

@@ -828,6 +828,7 @@ public class Druids
     private ScanQuery.Order order;
     private List<ScanQuery.OrderBy> orderBy;
     private List<ColumnType> columnTypes = null;
+    private Granularity materializedGranularity = null;
 
     public ScanQuery build()
     {
@@ -845,6 +846,7 @@ public class Druids
           columns,
           legacy,
           context,
+          materializedGranularity,
           columnTypes
       );
     }
@@ -862,6 +864,7 @@ public class Druids
           .filters(query.getFilter())
           .columns(query.getColumns())
           .legacy(query.isLegacy())
+          .materializedGranularity(query.getMaterializedGranularity())
           .context(query.getContext())
           .orderBy(query.getOrderBys())
           .columnTypes(query.getColumnTypes());
@@ -962,6 +965,12 @@ public class Druids
     public ScanQueryBuilder legacy(Boolean legacy)
     {
       this.legacy = legacy;
+      return this;
+    }
+
+    public ScanQueryBuilder materializedGranularity(Granularity materializedGranularity)
+    {
+      this.materializedGranularity = materializedGranularity;
       return this;
     }
 

@@ -20,6 +20,9 @@
 package org.apache.druid.java.util.common.guava;
 
 import com.google.common.collect.Ordering;
+import com.google.common.primitives.Longs;
+import org.apache.druid.java.util.common.DateTimes;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.joda.time.DateTimeComparator;
 import org.joda.time.Interval;
 
@@ -116,5 +119,11 @@ public class Comparators
   {
     return INTERVAL_BY_END_THEN_START;
   }
-
+  public static Comparator<Granularity> granularityGreaterFirst()
+  {
+    return (g1, g2) -> Longs.compare(
+        g2.bucket(DateTimes.EPOCH).toDurationMillis(),
+        g1.bucket(DateTimes.EPOCH).toDurationMillis()
+    );
+  }
 }

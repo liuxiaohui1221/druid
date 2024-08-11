@@ -193,6 +193,12 @@ public class TimeseriesQuery extends BaseQuery<Result<TimeseriesResultValue>>
   }
 
   @Override
+  public Query<Result<TimeseriesResultValue>> withOverriddenGranularity(Granularity granularity)
+  {
+    return Druids.TimeseriesQueryBuilder.copy(this).granularity(granularity).build();
+  }
+
+  @Override
   public Query<Result<TimeseriesResultValue>> optimizeForSegment(PerSegmentQueryOptimizationContext optimizationContext)
   {
     return Druids.TimeseriesQueryBuilder.copy(this).aggregators(optimizeAggs(optimizationContext)).build();

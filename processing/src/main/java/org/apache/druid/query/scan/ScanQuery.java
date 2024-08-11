@@ -32,11 +32,13 @@ import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.UOE;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.DataSource;
 import org.apache.druid.query.Druids;
 import org.apache.druid.query.InlineDataSource;
 import org.apache.druid.query.Queries;
+import org.apache.druid.query.Query;
 import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.query.operator.OffsetLimit;
 import org.apache.druid.query.spec.QuerySegmentSpec;
@@ -193,6 +195,7 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
   private final Integer maxRowsQueuedForOrdering;
   private final Integer maxSegmentPartitionsOrderedInMemory;
   private final List<ColumnType> columnTypes;
+  private final Granularity materializedGranularity;
 
   @JsonCreator
   public ScanQuery(
@@ -209,6 +212,7 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
       @JsonProperty("columns") List<String> columns,
       @JsonProperty("legacy") Boolean legacy,
       @JsonProperty("context") Map<String, Object> context,
+      @JsonProperty("materializedGranularity") Granularity materializedGranularity,
       @JsonProperty("columnTypes") List<ColumnType> columnTypes
   )
   {
@@ -234,7 +238,7 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
     this.columns = columns;
     this.legacy = legacy;
     this.columnTypes = columnTypes;
-
+    this.materializedGranularity = materializedGranularity;
     if (columnTypes != null) {
       Preconditions.checkNotNull(columns, "columns may not be null if columnTypes are specified");
       if (columns.size() != columnTypes.size()) {
@@ -304,6 +308,11 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
     return maxSegmentPartitionsOrderedInMemory;
   }
 
+  @Override
+  public ScanQuery withOverriddenGranularity(Granularity granularity)
+  {
+    return Druids.ScanQueryBuilder.copy(this).build();
+  }
   @JsonProperty
   @Override
   @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = VirtualColumns.JsonIncludeFilter.class)
@@ -459,6 +468,12 @@ public class ScanQuery extends BaseQuery<ScanResultValue>
   public Boolean isLegacy()
   {
     return legacy;
+  }
+
+  @JsonProperty
+  public Granularity getMaterializedGranularity()
+  {
+    return materializedGranularity;
   }
 
   @Override

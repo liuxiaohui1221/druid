@@ -52,7 +52,7 @@ COPY extensions/ /usr/local/druid/extensions/
 # Download the MySQL Java connector
 # target path must match the exact path referenced in environment-configs/common
 # alternatively: Download the MariaDB Java connector, and pretend it is the mysql connector
-RUN if [ "$MYSQL_DRIVER_CLASSNAME" = "com.mysql.jdbc.Driver" ] ; \
+RUN if [ "$MYSQL_DRIVER_CLASSNAME" = "com.mysql.cj.jdbc.Driver" ] ; \
     then wget -q "https://repo1.maven.org/maven2/mysql/mysql-connector-java/$MYSQL_VERSION/mysql-connector-java-$MYSQL_VERSION.jar" \
     -O /usr/local/druid/lib/mysql-connector-java.jar; \
     elif [ "$MYSQL_DRIVER_CLASSNAME" = "org.mariadb.jdbc.Driver" ] ; \

@@ -64,7 +64,12 @@ public class ServerSelector implements Overshadowable<ServerSelector>
   {
     return segment.get();
   }
-
+  public void updateMaterializedSegment(DataSegment segment)
+  {
+    synchronized (this) {
+      this.segment.set(segment);
+    }
+  }
   public void addServerAndUpdateSegment(QueryableDruidServer server, DataSegment segment)
   {
     synchronized (this) {

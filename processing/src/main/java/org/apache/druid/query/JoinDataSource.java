@@ -503,7 +503,32 @@ public class JoinDataSource implements DataSource
         }
     );
   }
+  public static DataSourceAnalysis forDataSource(final DataSource dataSource)
+  {
+    // Strip outer queries, retaining querySegmentSpecs as we go down (lowest will become the 'baseQuerySegmentSpec').
+    Query<?> baseQuery = null;
+    DataSource current = dataSource;
 
+    while (current instanceof QueryDataSource) {
+      final Query<?> subQuery = ((QueryDataSource) current).getQuery();
+
+      if (!(subQuery instanceof BaseQuery)) {
+        // We must verify that the subQuery is a BaseQuery, because it is required to make "getBaseQuerySegmentSpec"
+        // work properly. All builtin query types are BaseQuery, so we only expect this with funky extension queries.
+        throw new IAE("Cannot analyze subquery of class[%s]", subQuery.getClass().getName());
+      }
+
+      baseQuery = subQuery;
+      current = subQuery.getDataSource();
+    }
+
+    if (current instanceof JoinDataSource) {
+      final Triple<DataSource, DimFilter, List<PreJoinableClause>> flattened = flattenJoin((JoinDataSource) current);
+      return new DataSourceAnalysis(dataSource, baseQuery, flattened.second,flattened.third);
+    } else {
+      return new DataSourceAnalysis(dataSource, baseQuery, null,Collections.emptyList());
+    }
+  }
   /**
    * Flatten a datasource into two parts: the left-hand side datasource (the 'base' datasource), and a list of join
    * clauses, if any.

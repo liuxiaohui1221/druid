@@ -46,6 +46,8 @@ import org.apache.druid.guice.ServerTypeConfig;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.query.QuerySegmentWalker;
 import org.apache.druid.query.lookup.LookupModule;
+import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
+import org.apache.druid.query.materializedview.NoopOptimizer;
 import org.apache.druid.server.QueryResource;
 import org.apache.druid.server.ResponseContextConfig;
 import org.apache.druid.server.SegmentManager;
@@ -106,6 +108,8 @@ public class CliHistorical extends ServerRunnable
           binder.bindConstant().annotatedWith(Names.named("tlsServicePort")).to(8283);
           binder.bindConstant().annotatedWith(PruneLastCompactionState.class).to(true);
           binder.bind(ResponseContextConfig.class).toInstance(ResponseContextConfig.newConfig(true));
+
+          binder.bind(MaterializedViewOptimizer.class).to(NoopOptimizer.class).in(LazySingleton.class);
 
           // register Server before binding ZkCoordinator to ensure HTTP endpoints are available immediately
           LifecycleModule.register(binder, Server.class);

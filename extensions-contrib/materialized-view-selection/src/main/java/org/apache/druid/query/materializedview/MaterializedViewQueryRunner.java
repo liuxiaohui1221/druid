@@ -21,6 +21,7 @@ package org.apache.druid.query.materializedview;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Lists;
+import org.apache.druid.client.materializedview.DataSourceOptimizer;
 import org.apache.druid.java.util.common.guava.MergeSequence;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;

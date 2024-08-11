@@ -162,7 +162,7 @@ public class Queries
       final Query<?> subQuery = ((QueryDataSource) query.getDataSource()).getQuery();
       retVal = query.withDataSource(new QueryDataSource(withSpecificSegments(subQuery, descriptors)));
     } else {
-      retVal = query.withQuerySegmentSpec(new MultipleSpecificSegmentSpec(descriptors));
+      retVal = query.withQuerySegmentSpec(new MultipleSpecificSegmentSpec(descriptors, query.getIntervals()));
     }
 
     // Verify preconditions and invariants, just in case.
@@ -175,7 +175,9 @@ public class Queries
     }
 
     if (analysis.getBaseQuerySegmentSpec().isPresent()
-        && !analysis.getBaseQuerySegmentSpec().get().equals(new MultipleSpecificSegmentSpec(descriptors))) {
+        && !analysis.getBaseQuerySegmentSpec()
+                    .get()
+                    .equals(new MultipleSpecificSegmentSpec(descriptors, query.getIntervals()))) {
       // If you see the error message below, it's a bug in either this function or in DataSourceAnalysis.
       throw new ISE("Unable to apply specific segments to query with dataSource[%s]", query.getDataSource());
     }

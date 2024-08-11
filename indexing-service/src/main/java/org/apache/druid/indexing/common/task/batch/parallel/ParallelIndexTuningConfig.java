@@ -51,7 +51,7 @@ public class ParallelIndexTuningConfig extends IndexTuningConfig
 
   private final SplitHintSpec splitHintSpec;
 
-  private final int maxNumConcurrentSubTasks;
+  private int maxNumConcurrentSubTasks;
   private final int maxRetry;
   private final long taskStatusCheckPeriodMs;
 
@@ -64,7 +64,7 @@ public class ParallelIndexTuningConfig extends IndexTuningConfig
    * This configuration was temporarily added to avoid using too much memory while merging segments,
    * and will be removed once {@link org.apache.druid.segment.IndexMerger} is improved to not use much memory.
    */
-  private final int maxNumSegmentsToMerge;
+  private int maxNumSegmentsToMerge;
 
   /**
    * Total number of tasks for partial segment merge (that is, number of {@link PartialGenericSegmentMergeTask}s).
@@ -232,7 +232,10 @@ public class ParallelIndexTuningConfig extends IndexTuningConfig
   {
     return maxNumConcurrentSubTasks;
   }
-
+  public void setMaxNumConcurrentSubTasks(int maxNumConcurrentSubTasks)
+  {
+    this.maxNumConcurrentSubTasks = maxNumConcurrentSubTasks;
+  }
   @JsonProperty
   public int getMaxRetry()
   {
@@ -369,5 +372,9 @@ public class ParallelIndexTuningConfig extends IndexTuningConfig
            ", totalNumMergeTasks=" + totalNumMergeTasks +
            ", maxAllowedLockCount=" + maxAllowedLockCount +
            "} " + super.toString();
+  }
+
+  public void setMaxNumSegmentsToMerge(int maxNumSegmentsToMerge) {
+    this.maxNumSegmentsToMerge = maxNumSegmentsToMerge;
   }
 }

@@ -22,13 +22,18 @@ package org.apache.druid.indexing.common.task;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
 import org.apache.druid.client.indexing.ClientCompactionTaskTransformSpec;
+import org.apache.druid.collections.ResourceHolder;
 import org.apache.druid.data.input.InputFormat;
 import org.apache.druid.data.input.InputRow;
 import org.apache.druid.data.input.InputSource;
 import org.apache.druid.data.input.InputSourceReader;
+import org.apache.druid.data.input.impl.DimensionSchema;
 import org.apache.druid.data.input.impl.DimensionsSpec;
 import org.apache.druid.indexer.IngestionState;
 import org.apache.druid.indexer.report.IngestionStatsAndErrors;
@@ -58,18 +63,24 @@ import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.JodaUtils;
 import org.apache.druid.java.util.common.NonnullPair;
 import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.java.util.common.RE;
 import org.apache.druid.java.util.common.Stopwatch;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.granularity.GranularityType;
 import org.apache.druid.java.util.common.granularity.IntervalsByGranularity;
+import org.apache.druid.java.util.common.guava.Comparators;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
 import org.apache.druid.query.DruidMetrics;
 import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.SegmentDescriptor;
+import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.apache.druid.segment.DimensionHandler;
+import org.apache.druid.segment.QueryableIndex;
 import org.apache.druid.segment.SegmentSchemaMapping;
+import org.apache.druid.segment.column.ColumnHolder;
 import org.apache.druid.segment.handoff.SegmentHandoffNotifier;
 import org.apache.druid.segment.incremental.ParseExceptionHandler;
 import org.apache.druid.segment.incremental.RowIngestionMeters;
@@ -81,6 +92,7 @@ import org.apache.druid.segment.realtime.appenderator.SegmentIdWithShardSpec;
 import org.apache.druid.segment.transform.TransformSpec;
 import org.apache.druid.timeline.CompactionState;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.MaterializedSpec;
 import org.apache.druid.timeline.Partitions;
 import org.apache.druid.timeline.SegmentTimeline;
 import org.apache.druid.timeline.partition.HashBasedNumberedShardSpec;
@@ -90,11 +102,15 @@ import org.joda.time.Interval;
 import org.joda.time.Period;
 
 import javax.annotation.Nullable;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -106,7 +122,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Abstract class for batch tasks like {@link IndexTask}.
@@ -231,6 +249,29 @@ public abstract class AbstractBatchIndexTask extends AbstractTask
     );
   }
 
+//  public static Function<Set<DataSegment>, Set<DataSegment>> compactionStateAndMaterializedAnnotateFunction(
+//      boolean storeCompactionState,
+//      MaterializedSpec storeMaterializedSpec,
+//      TaskToolbox toolbox,
+//      IndexTuningConfig tuningConfig
+//  )
+//  {
+//    if (storeCompactionState || storeMaterializedSpec != null) {
+//      final Map<String, Object> indexSpecMap = tuningConfig.getIndexSpec().asMap(toolbox.getJsonMapper());
+//      return segments -> segments
+//          .stream()
+//          .map(
+//              s -> {
+//                return s.withLastCompactionState(storeCompactionState
+//                                                 ? new CompactionState(tuningConfig.getPartitionsSpec(), indexSpecMap)
+//                                                 : null)
+//                        .withStoreMaterializedSegment(storeMaterializedSpec);
+//              })
+//          .collect(Collectors.toSet());
+//    } else {
+//      return Function.identity();
+//    }
+//  }
   /**
    * Creates a predicate that is true for input rows which (a) are non-null and
    * (b) can be bucketed into an interval using the given granularity spec.
@@ -360,7 +401,7 @@ public abstract class AbstractBatchIndexTask extends AbstractTask
    *
    * @return whether the lock was acquired
    */
-  boolean determineLockGranularityAndTryLockWithSegments(
+  protected boolean determineLockGranularityAndTryLockWithSegments(
       TaskActionClient client,
       List<DataSegment> segments,
       BiConsumer<LockGranularity, List<DataSegment>> segmentCheckFunction
@@ -614,8 +655,9 @@ public abstract class AbstractBatchIndexTask extends AbstractTask
     return tuningConfig.isForceGuaranteedRollup();
   }
 
-  public static Function<Set<DataSegment>, Set<DataSegment>> addCompactionStateToSegments(
+  public static Function<Set<DataSegment>, Set<DataSegment>> compactionStateAndMaterializedAnnotateFunction(
       boolean storeCompactionState,
+      MaterializedSpec storeMaterializedSpec,
       TaskToolbox toolbox,
       IngestionSpec ingestionSpec
   )
@@ -643,6 +685,11 @@ public abstract class AbstractBatchIndexTask extends AbstractTask
           tuningConfig.getIndexSpec().asMap(toolbox.getJsonMapper()),
           granularitySpec.asMap(toolbox.getJsonMapper())
       );
+    } else if (storeMaterializedSpec != null) {
+      return segments -> segments
+          .stream()
+          .map(s -> s.withStoreMaterializedSegment(storeMaterializedSpec))
+          .collect(Collectors.toSet());
     } else {
       return Function.identity();
     }
@@ -840,6 +887,249 @@ public abstract class AbstractBatchIndexTask extends AbstractTask
       }
     }
     return new NonnullPair<>(interval, version);
+  }
+
+  /**
+   * Class for fetching and analyzing existing segments in order to generate reingestion specs.
+   */
+  protected static class ExistingSegmentAnalyzer
+  {
+    private final Iterable<Pair<DataSegment, Supplier<ResourceHolder<QueryableIndex>>>> segmentsIterable;
+
+    private final boolean needRollup;
+    private final boolean needQueryGranularity;
+    private final boolean needDimensionsSpec;
+    private final boolean needMetricsSpec;
+
+    // For processRollup:
+    private boolean rollup = true;
+
+    // For processQueryGranularity:
+    private Granularity queryGranularity;
+
+    // For processDimensionsSpec:
+    private final BiMap<String, Integer> uniqueDims = HashBiMap.create();
+    private final Map<String, DimensionSchema> dimensionSchemaMap = new HashMap<>();
+
+    // For processMetricsSpec:
+    private final Set<List<AggregatorFactory>> aggregatorFactoryLists = new HashSet<>();
+
+    public ExistingSegmentAnalyzer(
+        final Iterable<Pair<DataSegment, Supplier<ResourceHolder<QueryableIndex>>>> segmentsIterable,
+        final boolean needRollup,
+        final boolean needQueryGranularity,
+        final boolean needDimensionsSpec,
+        final boolean needMetricsSpec
+    )
+    {
+      this.segmentsIterable = segmentsIterable;
+      this.needRollup = needRollup;
+      this.needQueryGranularity = needQueryGranularity;
+      this.needDimensionsSpec = needDimensionsSpec;
+      this.needMetricsSpec = needMetricsSpec;
+    }
+
+    public void fetchAndProcessIfNeeded()
+    {
+      if (!needRollup && !needQueryGranularity && !needDimensionsSpec && !needMetricsSpec) {
+        // Nothing to do; short-circuit and don't fetch segments.
+        return;
+      }
+
+      final List<Pair<DataSegment, Supplier<ResourceHolder<QueryableIndex>>>> segments = sortSegmentsListNewestFirst();
+
+      for (Pair<DataSegment, Supplier<ResourceHolder<QueryableIndex>>> segmentPair : segments) {
+        final DataSegment dataSegment = segmentPair.lhs;
+
+        try (final ResourceHolder<QueryableIndex> queryableIndexHolder = segmentPair.rhs.get()) {
+          final QueryableIndex index = queryableIndexHolder.get();
+
+          if (index != null) { // Avoid tombstones (null QueryableIndex)
+            if (index.getMetadata() == null) {
+              throw new RE(
+                  "Index metadata doesn't exist for segment [%s]. Try providing explicit rollup, "
+                  + "queryGranularity, dimensionsSpec, and metricsSpec.", dataSegment.getId()
+              );
+            }
+
+            processRollup(index);
+            processQueryGranularity(index);
+            processDimensionsSpec(index);
+            processMetricsSpec(index);
+          }
+        }
+      }
+    }
+
+    public Boolean getRollup()
+    {
+      if (!needRollup) {
+        throw new ISE("Not computing rollup");
+      }
+
+      return rollup;
+    }
+
+    public Granularity getQueryGranularity()
+    {
+      if (!needQueryGranularity) {
+        throw new ISE("Not computing queryGranularity");
+      }
+
+      return queryGranularity;
+    }
+
+    public DimensionsSpec getDimensionsSpec()
+    {
+      if (!needDimensionsSpec) {
+        throw new ISE("Not computing dimensionsSpec");
+      }
+
+      final BiMap<Integer, String> orderedDims = uniqueDims.inverse();
+      final List<DimensionSchema> dimensionSchemas =
+          IntStream.range(0, orderedDims.size())
+                   .mapToObj(i -> {
+                     final String dimName = orderedDims.get(i);
+                     return Preconditions.checkNotNull(
+                         dimensionSchemaMap.get(dimName),
+                         "Cannot find dimension[%s] from dimensionSchemaMap",
+                         dimName
+                     );
+                   })
+                   .collect(Collectors.toList());
+
+      return new DimensionsSpec(dimensionSchemas);
+    }
+
+    public AggregatorFactory[] getMetricsSpec()
+    {
+      if (!needMetricsSpec) {
+        throw new ISE("Not computing metricsSpec");
+      }
+
+      if (aggregatorFactoryLists.isEmpty()) {
+        return new AggregatorFactory[0];
+      }
+
+      final AggregatorFactory[] mergedAggregators = AggregatorFactory.mergeAggregators(
+          aggregatorFactoryLists.stream()
+                                .map(xs -> xs.toArray(new AggregatorFactory[0]))
+                                .collect(Collectors.toList())
+      );
+
+      if (mergedAggregators == null) {
+        throw new ISE(
+            "Failed to merge existing aggregators when generating metricsSpec; "
+            + "try providing explicit metricsSpec"
+        );
+      }
+
+      return mergedAggregators;
+    }
+
+    /**
+     * Sort {@link #segmentsIterable} in order, such that we look at later segments prior to earlier ones. Useful when
+     * analyzing dimensions, as it allows us to take the latest value we see, and therefore prefer types from more
+     * recent segments, if there was a change.
+     * <p>
+     * Returns a List copy of the original Iterable.
+     */
+    private List<Pair<DataSegment, Supplier<ResourceHolder<QueryableIndex>>>> sortSegmentsListNewestFirst()
+    {
+      final List<Pair<DataSegment, Supplier<ResourceHolder<QueryableIndex>>>> segments =
+          Lists.newArrayList(segmentsIterable);
+
+      segments.sort(
+          Comparator.comparing(
+              o -> o.lhs.getInterval(),
+              Comparators.intervalsByStartThenEnd().reversed()
+          )
+      );
+
+      return segments;
+    }
+
+    private void processRollup(final QueryableIndex index)
+    {
+      if (!needRollup) {
+        return;
+      }
+
+      // carry-overs (i.e. query granularity & rollup) are valid iff they are the same in every segment:
+      // Pick rollup value if all segments being compacted have the same, non-null, value otherwise set it to false
+      final Boolean isIndexRollup = index.getMetadata().isRollup();
+      rollup = rollup && Boolean.valueOf(true).equals(isIndexRollup);
+    }
+
+    private void processQueryGranularity(final QueryableIndex index)
+    {
+      if (!needQueryGranularity) {
+        return;
+      }
+
+      // Pick the finer, non-null, of the query granularities of the segments being compacted
+      Granularity current = index.getMetadata().getQueryGranularity();
+      queryGranularity = compareWithCurrent(queryGranularity, current);
+    }
+
+    private void processDimensionsSpec(final QueryableIndex index)
+    {
+      if (!needDimensionsSpec) {
+        return;
+      }
+
+      final Map<String, DimensionHandler> dimensionHandlerMap = index.getDimensionHandlers();
+
+      for (String dimension : index.getAvailableDimensions()) {
+        final ColumnHolder columnHolder = Preconditions.checkNotNull(
+            index.getColumnHolder(dimension),
+            "Cannot find column for dimension[%s]",
+            dimension
+        );
+
+        if (!uniqueDims.containsKey(dimension)) {
+          Preconditions.checkNotNull(
+              dimensionHandlerMap.get(dimension),
+              "Cannot find dimensionHandler for dimension[%s]",
+              dimension
+          );
+
+          uniqueDims.put(dimension, uniqueDims.size());
+          dimensionSchemaMap.put(
+              dimension,
+              columnHolder.getColumnFormat().getColumnSchema(dimension)
+          );
+        }
+      }
+    }
+
+    private void processMetricsSpec(final QueryableIndex index)
+    {
+      if (!needMetricsSpec) {
+        return;
+      }
+
+      final AggregatorFactory[] aggregators = index.getMetadata().getAggregators();
+      if (aggregators != null) {
+        // aggregatorFactoryLists is a Set: we don't want to store tons of copies of the same aggregator lists from
+        // different segments.
+        aggregatorFactoryLists.add(Arrays.asList(aggregators));
+      }
+    }
+
+    static Granularity compareWithCurrent(Granularity queryGranularity, Granularity current)
+    {
+      if (queryGranularity == null && current != null) {
+        queryGranularity = current;
+      } else if (queryGranularity != null
+                 && current != null
+                 && Granularity.IS_FINER_THAN.compare(current, queryGranularity) < 0) {
+        queryGranularity = current;
+      }
+      // we never propagate nulls when there is at least one non-null granularity thus
+      // do nothing for the case queryGranularity != null && current == null
+      return queryGranularity;
+    }
   }
 
   private static class LockGranularityDetermineResult

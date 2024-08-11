@@ -162,7 +162,8 @@ public class DruidInputSourceTest
             ImmutableList.of(
                 new WindowedSegmentId(
                     "foo_2000-01-01T00:00:00.000Z_2000-01-01T01:00:00.000Z_abc123",
-                    ImmutableList.of(Intervals.of("2000-01-01T00/2000-01-01T12"))
+                    ImmutableList.of(Intervals.of("2000-01-01T00/2000-01-01T12")),
+                    0l
                 )
             ),
             null,

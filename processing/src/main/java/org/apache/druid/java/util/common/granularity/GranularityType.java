@@ -59,6 +59,7 @@ public enum GranularityType
       4,
       "PT1H"
   ),
+  TWO_HOUR(HOUR, "PT2H"),
   SIX_HOUR(HOUR, "PT6H"),
   EIGHT_HOUR(HOUR, "PT8H"),
   DAY(

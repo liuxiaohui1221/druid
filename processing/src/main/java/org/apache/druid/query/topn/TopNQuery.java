@@ -213,6 +213,12 @@ public class TopNQuery extends BaseQuery<Result<TopNResultValue>>
   }
 
   @Override
+  public Query<Result<TopNResultValue>> withOverriddenGranularity(Granularity granularity)
+  {
+    return new TopNQueryBuilder(this).granularity(granularity).build();
+  }
+
+  @Override
   public Query<Result<TopNResultValue>> optimizeForSegment(PerSegmentQueryOptimizationContext optimizationContext)
   {
     return new TopNQueryBuilder(this).aggregators(optimizeAggs(optimizationContext)).build();

@@ -22,6 +22,7 @@ package org.apache.druid.indexing.common.task.batch.parallel;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.jaxrs.smile.SmileMediaTypes;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -85,6 +86,7 @@ import org.apache.druid.server.security.Resource;
 import org.apache.druid.server.security.ResourceAction;
 import org.apache.druid.server.security.ResourceType;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.MaterializedSpec;
 import org.apache.druid.timeline.partition.BuildingShardSpec;
 import org.apache.druid.timeline.partition.NumberedShardSpec;
 import org.apache.druid.timeline.partition.PartitionBoundaries;
@@ -1164,8 +1166,16 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
         Tasks.STORE_COMPACTION_STATE_KEY,
         Tasks.DEFAULT_STORE_COMPACTION_STATE
     );
-    final Function<Set<DataSegment>, Set<DataSegment>> annotateFunction = addCompactionStateToSegments(
+    final Map<String, Object> storeMaterializedSegmentMap = getContextValue(Tasks.CONTEXT_KEY_STORE_MATERIALIZED_SEGMENTS);
+    MaterializedSpec materializedSpec = toolbox.getJsonMapper().convertValue(
+        storeMaterializedSegmentMap,
+        new TypeReference<MaterializedSpec>()
+        {
+        }
+    );
+    final Function<Set<DataSegment>, Set<DataSegment>> annotateFunction = compactionStateAndMaterializedAnnotateFunction(
         storeCompactionState,
+        materializedSpec,
         toolbox,
         ingestionSchema
     );

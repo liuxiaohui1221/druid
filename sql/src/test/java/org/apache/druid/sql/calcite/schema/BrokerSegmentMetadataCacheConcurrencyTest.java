@@ -35,12 +35,19 @@ import org.apache.druid.client.InternalQueryConfig;
 import org.apache.druid.client.ServerView;
 import org.apache.druid.client.TimelineServerView;
 import org.apache.druid.client.coordinator.NoopCoordinatorClient;
+import org.apache.druid.client.materializedview.DerivativeDataSourceManager;
 import org.apache.druid.client.selector.HighestPriorityTierSelectorStrategy;
 import org.apache.druid.client.selector.RandomServerSelectorStrategy;
+import org.apache.druid.indexing.overlord.DerivativeDataSource;
+import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.NonnullPair;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.concurrent.Execs;
+import org.apache.druid.java.util.common.granularity.Granularities;
+import org.apache.druid.java.util.http.client.HttpClient;
+import org.apache.druid.query.QueryToolChestWarehouse;
+import org.apache.druid.query.QueryWatcher;
 import org.apache.druid.query.TableDataSource;
 import org.apache.druid.query.aggregation.CountAggregatorFactory;
 import org.apache.druid.query.aggregation.DoubleSumAggregatorFactory;
@@ -89,12 +96,17 @@ import java.util.stream.Collectors;
 public class BrokerSegmentMetadataCacheConcurrencyTest extends BrokerSegmentMetadataCacheTestBase
 {
   private static final String DATASOURCE = "datasource";
+  private static final String dataSource = "derivative";
+  private static final String baseDataSource = "base";
   static final BrokerSegmentMetadataCacheConfig SEGMENT_CACHE_CONFIG_DEFAULT = BrokerSegmentMetadataCacheConfig.create("PT1S");
   private File tmpDir;
   private TestServerInventoryView inventoryView;
   private BrokerServerView serverView;
   private AbstractSegmentMetadataCache schema;
   private ExecutorService exec;
+  private String dataSourceDay = "derivative2";
+  private String dataSourceHour = "derivative2";
+
 
   @Before
   @Override
@@ -375,6 +387,12 @@ public class BrokerSegmentMetadataCacheConcurrencyTest extends BrokerSegmentMeta
     }
   }
 
+  private static ImmutableMap<String, DerivativeDataSource> createSubDerivativeDataSources()
+  {
+    List<DerivativeDataSource> list = new ArrayList<>();
+    list.add(new DerivativeDataSource(dataSource, baseDataSource, Granularities.DAY));
+    return ImmutableMap.copyOf(list.stream().collect(Collectors.toMap(DerivativeDataSource::getDataSource, ds -> ds)));
+  }
   private static BrokerServerView newBrokerServerView(FilteredServerInventoryView baseView)
   {
     DirectDruidClientFactory druidClientFactory = EasyMock.createMock(DirectDruidClientFactory.class);
@@ -384,12 +402,23 @@ public class BrokerSegmentMetadataCacheConcurrencyTest extends BrokerSegmentMeta
             .anyTimes();
 
     EasyMock.replay(druidClientFactory);
+    DerivativeDataSourceManager mockClient = EasyMock.createMock(DerivativeDataSourceManager.class);
+    EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSource)).andStubReturn(createSubDerivativeDataSources());
+    EasyMock.expect(mockClient.getDirectBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+    EasyMock.expect(mockClient.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+    EasyMock.replay(mockClient);
+
     return new BrokerServerView(
+        EasyMock.createMock(QueryToolChestWarehouse.class),
+        EasyMock.createMock(QueryWatcher.class),
+        new DefaultObjectMapper(),
+        EasyMock.createMock(HttpClient.class),
         druidClientFactory,
         baseView,
         new HighestPriorityTierSelectorStrategy(new RandomServerSelectorStrategy()),
         new NoopServiceEmitter(),
-        new BrokerSegmentWatcherConfig()
+        new BrokerSegmentWatcherConfig(),
+        mockClient
     );
   }
 

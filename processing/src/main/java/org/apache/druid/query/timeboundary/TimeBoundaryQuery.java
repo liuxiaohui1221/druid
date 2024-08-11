@@ -26,6 +26,7 @@ import it.unimi.dsi.fastutil.bytes.ByteArrays;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.DataSource;
 import org.apache.druid.query.Druids;
@@ -72,6 +73,11 @@ public class TimeBoundaryQuery extends BaseQuery<Result<TimeBoundaryResultValue>
     this.bound = bound == null ? "" : bound;
   }
 
+  @Override
+  public Query<Result<TimeBoundaryResultValue>> withOverriddenGranularity(Granularity granularity)
+  {
+    return Druids.TimeBoundaryQueryBuilder.copy(this).build();
+  }
   @Override
   public boolean hasFilters()
   {

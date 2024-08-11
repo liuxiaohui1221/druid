@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
 import org.joda.time.Interval;
 
+import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -38,17 +39,18 @@ public class WindowedSegmentId
   // This is of the form used by SegmentId.
   private final String segmentId;
   private final List<Interval> intervals;
-
+  private final Long segmentSize;
   @JsonCreator
   public WindowedSegmentId(
       @JsonProperty("segmentId") String segmentId,
-      @JsonProperty("intervals") List<Interval> intervals
+      @JsonProperty("intervals") List<Interval> intervals,
+      @JsonProperty("segmentSize") @Nullable Long segmentSize
   )
   {
     this.segmentId = Preconditions.checkNotNull(segmentId, "null segmentId");
     this.intervals = Preconditions.checkNotNull(intervals, "null intervals");
+    this.segmentSize = segmentSize;
   }
-
   public void addInterval(Interval interval)
   {
     this.intervals.add(interval);
@@ -64,6 +66,12 @@ public class WindowedSegmentId
   public List<Interval> getIntervals()
   {
     return Collections.unmodifiableList(intervals);
+  }
+
+  @JsonProperty
+  public Long getSegmentSize()
+  {
+    return segmentSize;
   }
 
   @Override
@@ -92,6 +100,7 @@ public class WindowedSegmentId
     return "WindowedSegmentId{" +
            "segmentId='" + segmentId + '\'' +
            ", intervals=" + intervals +
+           ", segmentSize=" + segmentSize +
            '}';
   }
 }

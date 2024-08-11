@@ -63,7 +63,7 @@ import org.apache.druid.metadata.PasswordProvider;
 import org.apache.druid.metadata.PasswordProviderRedactionMixIn;
 import org.apache.druid.server.coordinator.stats.CoordinatorRunStats;
 import org.apache.druid.utils.CollectionUtils;
-
+import org.joda.time.Interval;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -948,6 +948,11 @@ public class TaskQueue
     }
   }
 
+  // get all unlocked datasource,interval
+  public List<Interval> getNonLockIntervalSnapshots(String dataSource, Interval interval)
+  {
+    return taskLockbox.getNonLockIntervalSnapshots(dataSource, interval);
+  }
   /**
    * Gets the current status of this task either from the {@link TaskRunner}
    * or from the {@link TaskStorage} (if not available with the TaskRunner).

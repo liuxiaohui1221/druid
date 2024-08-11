@@ -26,6 +26,7 @@ import org.apache.druid.error.InvalidInput;
 import org.apache.druid.java.util.common.Cacheable;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.DataSource;
 import org.apache.druid.query.Druids;
@@ -149,6 +150,11 @@ public class SegmentMetadataQuery extends BaseQuery<SegmentAnalysis>
     return usingDefaultInterval;
   }
 
+  @Override
+  public Query<SegmentAnalysis> withOverriddenGranularity(Granularity granularity)
+  {
+    return Druids.SegmentMetadataQueryBuilder.copy(this).build();
+  }
   @Override
   public boolean hasFilters()
   {

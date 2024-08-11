@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.Binder;
+import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.discovery.NodeRole;
 import org.apache.druid.guice.JsonConfigProvider;
 import org.apache.druid.guice.annotations.LoadScope;
@@ -40,9 +41,10 @@ public class MaterializedViewMaintenanceDruidModule implements DruidModule
     return ImmutableList.of(
         new SimpleModule(getClass().getSimpleName())
             .registerSubtypes(
-                new NamedType(MaterializedViewSupervisorSpec.class, "derivativeDataSource"),
-                new NamedType(DerivativeDataSourceMetadata.class, "derivativeDataSource")
-                )
+                new NamedType(NativeBatchMaterializedViewSupervisorSpec.class, "materialized_view"),
+                // new NamedType(HadoopMaterializedViewSupervisorSpec.class, "derivativeDataSource"),
+                new NamedType(DerivativeDataSourceMetadata.class, "materialized_view")
+            )
     );
   }
 

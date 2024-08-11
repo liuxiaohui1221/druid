@@ -42,6 +42,7 @@ import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryRunner;
 import org.apache.druid.segment.indexing.BatchIOConfig;
+import org.apache.druid.segment.indexing.IOConfig;
 import org.apache.druid.server.DruidNode;
 import org.joda.time.Interval;
 
@@ -406,7 +407,7 @@ public abstract class AbstractTask implements Task
     return ingestionMode;
   }
 
-  protected static IngestionMode computeCompactionIngestionMode(@Nullable CompactionIOConfig ioConfig)
+  protected static IngestionMode computeCompactionIngestionMode(@Nullable IOConfig ioConfig)
   {
     // CompactionIOConfig does not have an isAppendToExisting method, so use default (for batch since compaction
     // is basically batch ingestion)

@@ -166,6 +166,11 @@ public abstract class BaseQuery<T> implements Query<T>
   }
 
   @Override
+  public Query<T> withOverriddenGranularity(Granularity granularity)
+  {
+    return this;
+  }
+  @Override
   @JsonProperty
   @JsonInclude(Include.NON_DEFAULT)
   public Map<String, Object> getContext()

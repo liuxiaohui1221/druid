@@ -237,6 +237,27 @@ public class VersionedIntervalTimeline<VersionType, ObjectType extends Overshado
       lock.writeLock().unlock();
     }
   }
+  @Override
+  @Nullable
+  public PartitionHolder<ObjectType> findEntry(Interval interval, VersionType version)
+  {
+    lock.readLock().lock();
+    try {
+      for (Entry<Interval, TreeMap<VersionType, TimelineEntry>> entry : allTimelineEntries.entrySet()) {
+        if (entry.getKey().equals(interval) || entry.getKey().contains(interval)) {
+          TimelineEntry foundEntry = entry.getValue().get(version);
+          if (foundEntry != null) {
+            return foundEntry.getPartitionHolder();
+          }
+        }
+      }
+
+      return null;
+    }
+    finally {
+      lock.readLock().unlock();
+    }
+  }
 
   @Nullable
   public PartitionChunk<ObjectType> remove(Interval interval, VersionType version, PartitionChunk<ObjectType> chunk)

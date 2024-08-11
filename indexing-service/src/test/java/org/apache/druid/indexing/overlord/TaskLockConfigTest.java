@@ -94,7 +94,7 @@ public class TaskLockConfigTest
     Assert.assertFalse(fromTaskStorage.getContextValue(Tasks.FORCE_TIME_CHUNK_LOCK_KEY));
   }
 
-  private TaskQueue createTaskQueue(@Nullable Boolean forceTimeChunkLock)
+  protected TaskQueue createTaskQueue(@Nullable Boolean forceTimeChunkLock)
   {
     final TaskLockConfig lockConfig;
     if (forceTimeChunkLock != null) {

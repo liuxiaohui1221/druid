@@ -28,6 +28,7 @@ import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.UOE;
 import org.apache.druid.java.util.common.granularity.Granularities;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.BaseSequence;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;
@@ -35,7 +36,11 @@ import org.apache.druid.query.QueryMetrics;
 import org.apache.druid.query.QueryTimeoutException;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.filter.Filter;
+import org.apache.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import org.apache.druid.segment.BaseObjectColumnValueSelector;
+import org.apache.druid.segment.ColumnValueSelector;
+import org.apache.druid.segment.Cursor;
+import org.apache.druid.segment.LongColumnSelector;
 import org.apache.druid.segment.Segment;
 import org.apache.druid.segment.StorageAdapter;
 import org.apache.druid.segment.VirtualColumn;
@@ -136,7 +141,7 @@ public class ScanQueryEngine
                     filter,
                     intervals.get(0),
                     query.getVirtualColumns(),
-                    Granularities.ALL,
+                    cursorGranularity(query),
                     query.getTimeOrder().equals(ScanQuery.Order.DESCENDING) ||
                     (query.getTimeOrder().equals(ScanQuery.Order.NONE) && query.isDescending()),
                     queryMetrics
@@ -154,8 +159,7 @@ public class ScanQueryEngine
                           final BaseObjectColumnValueSelector selector;
 
                           if (legacy && LEGACY_TIMESTAMP_KEY.equals(column)) {
-                            selector = cursor.getColumnSelectorFactory()
-                                             .makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+                            selector = timeSelector(query, cursor);
                             ColumnCapabilities columnCapabilities = cursor.getColumnSelectorFactory()
                                                                           .getColumnCapabilities(ColumnHolder.TIME_COLUMN_NAME);
                             rowSignatureBuilder.add(
@@ -278,5 +282,42 @@ public class ScanQueryEngine
       return query.getScanRowsLimit() - (Long) responseContext.getRowScanCount();
     }
     return query.getScanRowsLimit();
+  }
+
+  private Granularity cursorGranularity(ScanQuery query)
+  {
+    return (query.getMaterializedGranularity() == null || query.getMaterializedGranularity().equals(Granularities.NONE))
+           ? Granularities.ALL
+           : query.getMaterializedGranularity();
+  }
+
+  private ColumnValueSelector<?> timeSelector(ScanQuery query, Cursor cursor)
+  {
+    if (query.getMaterializedGranularity() == null || query.getMaterializedGranularity().equals(Granularities.NONE)) {
+      return cursor.getColumnSelectorFactory().makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME);
+    }
+
+    return new LongColumnSelector()
+    {
+      @Override
+      public boolean isNull()
+      {
+        return false;
+      }
+
+      @Override
+      public long getLong()
+      {
+        return cursor.getTime().getMillis();
+      }
+
+      @Override
+      public void inspectRuntimeShape(RuntimeShapeInspector inspector)
+      {
+        cursor.getColumnSelectorFactory()
+              .makeColumnValueSelector(ColumnHolder.TIME_COLUMN_NAME)
+              .inspectRuntimeShape(inspector);
+      }
+    };
   }
 }

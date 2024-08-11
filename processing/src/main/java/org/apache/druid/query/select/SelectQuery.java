@@ -123,6 +123,11 @@ public class SelectQuery implements Query<Object>
   }
 
   @Override
+  public Query<Object> withOverriddenGranularity(Granularity granularity)
+  {
+    throw new RuntimeException(REMOVED_ERROR_MESSAGE);
+  }
+  @Override
   public Query<Object> withOverriddenContext(Map<String, Object> contextOverride)
   {
     throw new RuntimeException(REMOVED_ERROR_MESSAGE);

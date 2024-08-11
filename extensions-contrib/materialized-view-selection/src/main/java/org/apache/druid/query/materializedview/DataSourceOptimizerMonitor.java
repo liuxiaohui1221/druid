@@ -20,6 +20,8 @@
 package org.apache.druid.query.materializedview;
 
 import com.google.inject.Inject;
+import org.apache.druid.client.materializedview.DataSourceOptimizer;
+import org.apache.druid.client.materializedview.DataSourceOptimizerStats;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
 import org.apache.druid.java.util.metrics.AbstractMonitor;

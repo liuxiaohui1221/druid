@@ -25,6 +25,7 @@
 # Returns:
 #   The bin folder of java if it exists, otherwise an empty string
 #######################################
+export JAVA_HOME=/opt/data/base/jdk1.8.0_381
 get_java_bin_dir() {
     if [ ! -z "${DRUID_JAVA_HOME-}" ]; then
       printf "$DRUID_JAVA_HOME/bin"

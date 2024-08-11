@@ -33,12 +33,14 @@ import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.inject.Inject;
+import org.apache.druid.client.materializedview.DerivativeDataSourceManager;
 import org.apache.druid.guice.LazySingleton;
 import org.apache.druid.guice.annotations.Json;
 import org.apache.druid.guice.annotations.Self;
 import org.apache.druid.guice.annotations.Smile;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.query.BadJsonQueryException;
+import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryException;
@@ -46,6 +48,8 @@ import org.apache.druid.query.QueryInterruptedException;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.context.ResponseContext.Keys;
+import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
+import org.apache.druid.query.materializedview.MaterializedViewQuery;
 import org.apache.druid.server.metrics.QueryCountStatsProvider;
 import org.apache.druid.server.security.Access;
 import org.apache.druid.server.security.AuthConfig;
@@ -110,6 +114,7 @@ public class QueryResource implements QueryCountStatsProvider
   private final AtomicLong interruptedQueryCount = new AtomicLong();
   private final AtomicLong timedOutQueryCount = new AtomicLong();
   private final QueryResourceQueryMetricCounter counter = new QueryResourceQueryMetricCounter();
+  private final MaterializedViewOptimizer mvOptimizer;
 
   @Inject
   public QueryResource(
@@ -120,7 +125,8 @@ public class QueryResource implements QueryCountStatsProvider
       AuthConfig authConfig,
       AuthorizerMapper authorizerMapper,
       ResponseContextConfig responseContextConfig,
-      @Self DruidNode selfNode
+      @Self DruidNode selfNode,
+      MaterializedViewOptimizer mvOptimizer
   )
   {
     this.queryLifecycleFactory = queryLifecycleFactory;
@@ -132,6 +138,19 @@ public class QueryResource implements QueryCountStatsProvider
     this.authorizerMapper = authorizerMapper;
     this.responseContextConfig = responseContextConfig;
     this.selfNode = selfNode;
+    this.mvOptimizer = mvOptimizer;
+  }
+
+  public Query getMaterializedViewQueryIfNecessary(Query baseQuery)
+  {
+    if (!(baseQuery instanceof BaseQuery)) {
+      return baseQuery;
+    }
+    boolean materializedViewQuery = DerivativeDataSourceManager.isMaterializedViewQuery(baseQuery);
+    if (!materializedViewQuery) {
+      return baseQuery;
+    }
+    return new MaterializedViewQuery.Builder().query((BaseQuery) baseQuery).optimizer(mvOptimizer).build();
   }
 
   @DELETE
@@ -271,7 +290,7 @@ public class QueryResource implements QueryCountStatsProvider
       final ResourceIOReaderWriter ioReaderWriter
   ) throws IOException
   {
-    final Query<?> baseQuery;
+    Query<?> baseQuery;
     try {
       baseQuery = ioReaderWriter.getRequestMapper().readValue(in, Query.class);
     }
@@ -280,17 +299,14 @@ public class QueryResource implements QueryCountStatsProvider
     }
 
     String prevEtag = getPreviousEtag(req);
-    if (prevEtag == null) {
-      return baseQuery;
-    }
 
-    return baseQuery.withOverriddenContext(
-        QueryContexts.override(
-            baseQuery.getContext(),
-            HEADER_IF_NONE_MATCH,
-            prevEtag
-        )
-    );
+    if (prevEtag != null) {
+      baseQuery = baseQuery.withOverriddenContext(
+          ImmutableMap.of(HEADER_IF_NONE_MATCH, prevEtag)
+      );
+    }
+    Query mvQuery = getMaterializedViewQueryIfNecessary(baseQuery);
+    return mvQuery;
   }
 
   private static String getPreviousEtag(final HttpServletRequest req)

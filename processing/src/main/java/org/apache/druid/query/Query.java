@@ -30,6 +30,8 @@ import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.datasourcemetadata.DataSourceMetadataQuery;
 import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.query.groupby.GroupByQuery;
+import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
+import org.apache.druid.query.materializedview.NoopOptimizer;
 import org.apache.druid.query.metadata.metadata.SegmentMetadataQuery;
 import org.apache.druid.query.operator.WindowOperatorQuery;
 import org.apache.druid.query.scan.ScanQuery;
@@ -182,6 +184,13 @@ public interface Query<T>
   Query<T> withOverriddenContext(Map<String, Object> contextOverride);
 
   /**
+   * Returns a copy of this query with a new Granularity
+   */
+  default Query<T> withOverriddenGranularity(Granularity granularity)
+  {
+    return this;
+  }
+  /**
    * Returns a new query, identical to this one, but with a different associated {@link QuerySegmentSpec}.
    *
    * This often changes the behavior of {@link #getRunner(QuerySegmentWalker)}, since most queries inherit that method
@@ -270,5 +279,10 @@ public interface Query<T>
   default Set<String> getRequiredColumns()
   {
     return null;
+  }
+
+  default MaterializedViewOptimizer getOptimizer()
+  {
+    return new NoopOptimizer();
   }
 }

@@ -67,6 +67,7 @@ public class CompactionIOConfig implements IOConfig
     return allowNonAlignedInterval;
   }
 
+  @Override
   @JsonProperty
   public boolean isDropExisting()
   {

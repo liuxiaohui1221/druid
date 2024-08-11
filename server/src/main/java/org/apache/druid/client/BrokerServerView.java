@@ -19,13 +19,20 @@
 
 package org.apache.druid.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Ordering;
 import com.google.inject.Inject;
+import org.apache.druid.client.materializedview.DerivativeDataSourceManager;
+import org.apache.druid.client.materializedview.MaterializedViewUtils;
+import org.apache.druid.client.selector.HighestPriorityTierSelectorStrategy;
 import org.apache.druid.client.selector.QueryableDruidServer;
+import org.apache.druid.client.selector.RandomServerSelectorStrategy;
 import org.apache.druid.client.selector.ServerSelector;
 import org.apache.druid.client.selector.TierSelectorStrategy;
 import org.apache.druid.guice.ManageLifecycle;
+import org.apache.druid.guice.annotations.EscalatedClient;
+import org.apache.druid.guice.annotations.Smile;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.concurrent.Execs;
@@ -33,14 +40,19 @@ import org.apache.druid.java.util.common.lifecycle.LifecycleStart;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
+import org.apache.druid.java.util.http.client.HttpClient;
 import org.apache.druid.query.QueryRunner;
+import org.apache.druid.query.QueryToolChestWarehouse;
+import org.apache.druid.query.QueryWatcher;
 import org.apache.druid.query.TableDataSource;
 import org.apache.druid.query.planning.DataSourceAnalysis;
 import org.apache.druid.segment.realtime.appenderator.SegmentSchemas;
 import org.apache.druid.server.coordination.DruidServerMetadata;
 import org.apache.druid.server.coordination.ServerType;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.MaterializedDataSegment;
 import org.apache.druid.timeline.SegmentId;
+import org.apache.druid.timeline.TimelineLookup;
 import org.apache.druid.timeline.VersionedIntervalTimeline;
 import org.apache.druid.timeline.partition.PartitionChunk;
 
@@ -68,24 +80,40 @@ public class BrokerServerView implements TimelineServerView
   private final ConcurrentMap<String, QueryableDruidServer> clients = new ConcurrentHashMap<>();
   private final Map<SegmentId, ServerSelector> selectors = new HashMap<>();
   private final Map<String, VersionedIntervalTimeline<String, ServerSelector>> timelines = new HashMap<>();
+  private final Map<SegmentId, ServerSelector> materializedSelectors;
+  private final Map<String, VersionedIntervalTimeline<String, ServerSelector>> materializedTimelines;
   private final ConcurrentMap<TimelineCallback, Executor> timelineCallbacks = new ConcurrentHashMap<>();
   private final DirectDruidClientFactory druidClientFactory;
+  private final QueryToolChestWarehouse warehouse;
+  private final QueryWatcher queryWatcher;
+  private final ObjectMapper smileMapper;
+  private final HttpClient httpClient;
   private final TierSelectorStrategy tierSelectorStrategy;
   private final ServiceEmitter emitter;
   private final BrokerSegmentWatcherConfig segmentWatcherConfig;
   private final Predicate<Pair<DruidServerMetadata, DataSegment>> segmentFilter;
+  private final DerivativeDataSourceManager derivativeDatasourceMeta;
   private final CountDownLatch initialized = new CountDownLatch(1);
   private final FilteredServerInventoryView baseView;
 
   @Inject
   public BrokerServerView(
+      final QueryToolChestWarehouse warehouse,
+      final QueryWatcher queryWatcher,
+      final @Smile ObjectMapper smileMapper,
+      final @EscalatedClient HttpClient httpClient,
       final DirectDruidClientFactory directDruidClientFactory,
       final FilteredServerInventoryView baseView,
       final TierSelectorStrategy tierSelectorStrategy,
       final ServiceEmitter emitter,
-      final BrokerSegmentWatcherConfig segmentWatcherConfig
+      final BrokerSegmentWatcherConfig segmentWatcherConfig,
+      final DerivativeDataSourceManager derivativeDatasourceMeta
   )
   {
+    this.warehouse = warehouse;
+    this.queryWatcher = queryWatcher;
+    this.smileMapper = smileMapper;
+    this.httpClient = httpClient;
     this.druidClientFactory = directDruidClientFactory;
     this.baseView = baseView;
     this.tierSelectorStrategy = tierSelectorStrategy;
@@ -94,6 +122,9 @@ public class BrokerServerView implements TimelineServerView
     // Validate and set the segment watcher config
     validateSegmentWatcherConfig(segmentWatcherConfig);
     this.segmentWatcherConfig = segmentWatcherConfig;
+    this.materializedSelectors = new HashMap<>();
+    this.materializedTimelines = new HashMap<>();
+    this.derivativeDatasourceMeta = derivativeDatasourceMeta;
 
     this.segmentFilter = (Pair<DruidServerMetadata, DataSegment> metadataAndSegment) -> {
 
@@ -260,6 +291,10 @@ public class BrokerServerView implements TimelineServerView
 
           timeline.add(segment.getInterval(), segment.getVersion(), segment.getShardSpec().createChunk(selector));
           selectors.put(segmentId, selector);
+
+          // 如果产生物化视图segment，则还原保存被物化的segments
+          log.info("Added derivative segment[%s] for server[%s]", segment, server);
+          addedOrRemovedMaterializedSegments(server, segment, true);
         }
 
         QueryableDruidServer queryableDruidServer = clients.get(server.getName());
@@ -280,6 +315,72 @@ public class BrokerServerView implements TimelineServerView
       }
       // run the callbacks, even if the segment came from a broker, lets downstream watchers decide what to do with it
       runTimelineCallbacks(callback -> callback.segmentAdded(server, segment));
+    }
+  }
+
+
+  private void addedOrRemovedMaterializedSegments(
+      final DruidServerMetadata server,
+      final DataSegment segment,
+      final boolean isAdded
+  )
+  {
+    if (segment.getMaterializedSpec() != null) {
+      List<MaterializedDataSegment> materializedDataSegments = MaterializedViewUtils.recoveryBaseDataSegments(
+          derivativeDatasourceMeta,
+          segment
+      );
+      if (materializedDataSegments.size() == 0) {
+        log.error(
+            "WTF? Can not recovery dataSegment[%s]'s baseDataSegment,because can not get derivative dataSource[%s]'s metadata",
+            segment.getId(),
+            segment.getDataSource()
+        );
+        return;
+      }
+      if (isAdded) {
+        serverAddedMaterializedSegment(server, materializedDataSegments);
+      } else {
+        serverRemovedMaterializedSegment(server, materializedDataSegments);
+      }
+    }
+  }
+
+  private void serverAddedMaterializedSegment(
+      final DruidServerMetadata server,
+      final List<MaterializedDataSegment> dataSegments
+  )
+  {
+    // in theory we could probably just filter this to ensure we don't put ourselves in here, to make broker tree
+    // query topologies, but for now just skip all brokers, so we don't create some sort of wild infinite query
+    // loop...
+    if (server.getType().equals(ServerType.BROKER)) {
+      return;
+    }
+    for (MaterializedDataSegment materializedSegment : dataSegments) {
+      SegmentId segmentId = materializedSegment.getId();
+      ServerSelector selector = materializedSelectors.get(segmentId);
+      if (selector == null) {
+        selector = new ServerSelector(
+            materializedSegment,
+            new HighestPriorityTierSelectorStrategy(new RandomServerSelectorStrategy())
+        );
+        log.info("Adding recovery materialized base segment[%s] for server[%s]", materializedSegment, server);
+        VersionedIntervalTimeline<String, ServerSelector> timeline = materializedTimelines.get(materializedSegment.getDataSource());
+        if (timeline == null) {
+          timeline = new VersionedIntervalTimeline<>(Ordering.natural());
+          materializedTimelines.put(materializedSegment.getDataSource(), timeline);
+        }
+
+        timeline.add(
+            materializedSegment.getInterval(),
+            materializedSegment.getVersion(),
+            materializedSegment.getShardSpec().createChunk(selector)
+        );
+        materializedSelectors.put(segmentId, selector);
+      }
+
+      selector.updateMaterializedSegment(materializedSegment);
     }
   }
 
@@ -328,6 +429,10 @@ public class BrokerServerView implements TimelineServerView
         final PartitionChunk<ServerSelector> removedPartition = timeline.remove(
             segment.getInterval(), segment.getVersion(), segment.getShardSpec().createChunk(selector)
         );
+        log.debug("Removed segment[%s] from server[%s].", segmentId, server);
+
+        // 如果是物化视图segment，则同步删除被物化的segments
+        addedOrRemovedMaterializedSegments(server, segment, false);
 
         if (removedPartition == null) {
           log.warn(
@@ -339,18 +444,58 @@ public class BrokerServerView implements TimelineServerView
           runTimelineCallbacks(callback -> callback.segmentRemoved(segment));
         }
       }
+
+    }
+  }
+
+  private void serverRemovedMaterializedSegment(
+      DruidServerMetadata server,
+      final List<MaterializedDataSegment> dataSegments
+  )
+  {
+    for (MaterializedDataSegment materializedSegment : dataSegments) {
+      SegmentId segmentId = materializedSegment.getId();
+      final ServerSelector selector;
+      log.debug("Removing derivative segment for[%s] from server[%s].", segmentId, server);
+
+      selector = materializedSelectors.get(segmentId);
+      if (selector == null) {
+        log.warn("Told to remove non-existant recovery segment[%s]", segmentId);
+        return;
+      }
+
+      VersionedIntervalTimeline<String, ServerSelector> timeline = materializedTimelines.get(materializedSegment.getDataSource());
+      materializedSelectors.remove(segmentId);
+
+      final PartitionChunk<ServerSelector> removedPartition = timeline.remove(
+          materializedSegment.getInterval(),
+          materializedSegment.getVersion(),
+          materializedSegment.getShardSpec().createChunk(selector)
+      );
+      log.debug("Removed derivative segment for[%s] from server[%s].", segmentId, server);
+      if (removedPartition == null) {
+        log.warn(
+            "Asked to remove materializedTimelines entry[interval: %s, version: %s] that doesn't exist",
+            materializedSegment.getInterval(),
+            materializedSegment.getVersion()
+        );
+      }
     }
   }
 
   @Override
-  public Optional<VersionedIntervalTimeline<String, ServerSelector>> getTimeline(final DataSourceAnalysis analysis)
+  public Optional<VersionedIntervalTimeline<String, ServerSelector>> getTimeline(
+      final DataSourceAnalysis analysis,
+      boolean chooseBaseSegement
+  )
   {
     final TableDataSource table =
         analysis.getBaseTableDataSource()
                 .orElseThrow(() -> new ISE("Cannot handle base datasource: %s", analysis.getBaseDataSource()));
 
     synchronized (lock) {
-      return Optional.ofNullable(timelines.get(table.getName()));
+      return chooseBaseSegement ? Optional.ofNullable(materializedTimelines.get(table.getName())) : Optional.ofNullable(
+          timelines.get(table.getName()));
     }
   }
 

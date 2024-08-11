@@ -424,6 +424,41 @@ public class OverlordResource
     );
   }
 
+
+  @GET
+  @Path("/getNonLockIntervals/{dataSource}")
+  @Produces(MediaType.APPLICATION_JSON)
+  public Response getNonLockIntervals(
+      @PathParam("dataSource") String dataSource,
+      @QueryParam("interval") String intervalStr,
+      @Context HttpServletRequest request
+  )
+  {
+    // check auth for dataSource
+    final Access authResult = AuthorizationUtils.authorizeAllResourceActions(
+        request,
+        ImmutableList.of(
+            new ResourceAction(new Resource(dataSource, ResourceType.DATASOURCE), Action.READ)
+        ),
+        authorizerMapper
+    );
+
+    if (!authResult.isAllowed()) {
+      throw new ForbiddenException(authResult.getMessage());
+    }
+    return asLeaderWith(
+        taskMaster.getTaskQueue(),
+        new Function<TaskQueue, Response>()
+        {
+          @Override
+          public Response apply(TaskQueue taskQueue)
+          {
+            return Response.ok(taskQueue.getNonLockIntervalSnapshots(dataSource, Intervals.of(intervalStr))).build();
+          }
+        }
+    );
+  }
+
   @POST
   @Path("/datasources/{dataSource}/shutdownAllTasks")
   @Produces(MediaType.APPLICATION_JSON)

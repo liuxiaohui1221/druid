@@ -92,7 +92,7 @@ setupData()
       && /etc/init.d/mysql stop
   fi
 
-  if [ "$MYSQL_DRIVER_CLASSNAME" != "com.mysql.jdbc.Driver" ] ; then
+  if [ "$MYSQL_DRIVER_CLASSNAME" != "com.mysql.cj.jdbc.Driver" ] ; then
     setKey $DRUID_SERVICE druid.metadata.mysql.driver.driverClassName $MYSQL_DRIVER_CLASSNAME
   fi
 

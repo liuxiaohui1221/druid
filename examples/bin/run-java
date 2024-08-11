@@ -15,10 +15,11 @@
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
-# under the License.
+# under the License.h
 
 WHEREAMI="$(dirname "$0")"
 JAVA_BIN="$(source "$WHEREAMI"/java-util && get_java_bin_dir)/java"
+echo "Using java from $JAVA_BIN"
 if [ -z "$JAVA_BIN" ]; then
   >&2 echo "Could not find java - please run $WHEREAMI/verify-java to confirm it is installed."
   exit 1

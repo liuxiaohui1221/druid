@@ -2647,7 +2647,10 @@ public class CachingClusteredClientTest
           }
 
           @Override
-          public Optional<VersionedIntervalTimeline<String, ServerSelector>> getTimeline(DataSourceAnalysis analysis)
+          public Optional<VersionedIntervalTimeline<String, ServerSelector>> getTimeline(
+              DataSourceAnalysis analysis,
+              boolean chooseMaterialized
+          )
           {
             return Optional.of(timeline);
           }

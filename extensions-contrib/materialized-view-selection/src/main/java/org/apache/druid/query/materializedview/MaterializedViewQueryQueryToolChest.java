@@ -23,6 +23,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Function;
 import com.google.inject.Inject;
+import org.apache.druid.client.materializedview.DataSourceOptimizer;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryMetrics;
@@ -149,7 +150,7 @@ public class MaterializedViewQueryQueryToolChest extends QueryToolChest
   public Query getRealQuery(Query query)
   {
     if (query instanceof MaterializedViewQuery) {
-      optimizer = ((MaterializedViewQuery) query).getOptimizer();
+      optimizer = (DataSourceOptimizer) ((MaterializedViewQuery) query).getOptimizer();
       return ((MaterializedViewQuery) query).getQuery();
     }
     return query;

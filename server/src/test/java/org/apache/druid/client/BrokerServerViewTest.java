@@ -25,18 +25,23 @@ import com.fasterxml.jackson.dataformat.smile.SmileGenerator;
 import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import org.apache.druid.client.materializedview.DerivativeDataSourceManager;
 import org.apache.druid.client.selector.HighestPriorityTierSelectorStrategy;
 import org.apache.druid.client.selector.RandomServerSelectorStrategy;
 import org.apache.druid.client.selector.ServerSelector;
 import org.apache.druid.curator.CuratorTestBase;
+import org.apache.druid.indexing.overlord.DerivativeDataSource;
 import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.http.client.HttpClient;
+import org.apache.druid.query.JoinDataSource;
 import org.apache.druid.query.QueryToolChestWarehouse;
 import org.apache.druid.query.QueryWatcher;
 import org.apache.druid.query.TableDataSource;
@@ -46,7 +51,9 @@ import org.apache.druid.server.coordination.DruidServerMetadata;
 import org.apache.druid.server.coordination.ServerType;
 import org.apache.druid.server.initialization.ZkPathsConfig;
 import org.apache.druid.server.metrics.NoopServiceEmitter;
+import org.apache.druid.timeline.BaseShardSpecsSpec;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.MaterializedSpec;
 import org.apache.druid.timeline.TimelineLookup;
 import org.apache.druid.timeline.TimelineObjectHolder;
 import org.apache.druid.timeline.partition.NoneShardSpec;
@@ -59,12 +66,16 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.stream.Collectors;
 
 public class BrokerServerViewTest extends CuratorTestBase
 {
@@ -77,6 +88,10 @@ public class BrokerServerViewTest extends CuratorTestBase
 
   private BatchServerInventoryView baseView;
   private BrokerServerView brokerServerView;
+  private String dataSource;
+  private String baseDataSource;
+  Map<Short, BaseShardSpecsSpec> multiMaterializedSpecs = new HashMap<>();
+
 
   public BrokerServerViewTest()
   {
@@ -87,9 +102,12 @@ public class BrokerServerViewTest extends CuratorTestBase
   @Before
   public void setUp() throws Exception
   {
+    dataSource = "test_broker_server_view";
+    baseDataSource = "base";
     setupServerAndCurator();
     curator.start();
     curator.blockUntilConnected();
+    multiMaterializedSpecs.put((short) 0, new BaseShardSpecsSpec(0, 1, "v1"));
   }
 
   @Test
@@ -101,22 +119,71 @@ public class BrokerServerViewTest extends CuratorTestBase
 
     setupViews();
 
-    final DruidServer druidServer = setupHistoricalServer("default_tier", "localhost:1234", 0);
-    final DataSegment segment = dataSegmentWithIntervalAndVersion("2014-10-20T00:00:00Z/P1D", "v1");
-    final int partition = segment.getShardSpec().getPartitionNum();
-    final Interval intervals = Intervals.of("2014-10-20T00:00:00Z/P1D");
+    final DruidServer druidServer = new DruidServer(
+        "localhost:1234",
+        "localhost:1234",
+        null,
+        10000000L,
+        ServerType.HISTORICAL,
+        "default_tier",
+        0
+    );
+
+    final List<DataSegment> baseSegments = Lists.transform(
+        ImmutableList.of(
+            Pair.of("2014-10-20T00/2014-10-20T01", "v1"),
+            Pair.of("2014-10-20T11/2014-10-20T12", "v1")
+        ), input -> {
+          return dataSegmentWithIntervalAndVersion(baseDataSource, input.lhs, input.rhs, null, false);
+        }
+    );
+
+    setupZNodeForServer(druidServer, zkPathsConfig, jsonMapper);
+    Map<Short, BaseShardSpecsSpec> multiMaterializedSpecs = new HashMap<>();
+    multiMaterializedSpecs.put((short) 0, new BaseShardSpecsSpec(0, 1, "v1"));
+    multiMaterializedSpecs.put((short) 11, new BaseShardSpecsSpec(0, 1, "v1"));
+    long mapingBuckets = Intervals.of("2014-10-20T00:00:00Z/P1D").toDuration().toStandardHours().getHours();
+    final DataSegment segment = dataSegmentWithIntervalAndVersion(
+        dataSource,
+        "2014-10-20T00:00:00Z/P1D",
+        "v1",
+        new MaterializedSpec(
+            MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+            null,
+            multiMaterializedSpecs,
+            (short) mapingBuckets
+        ),
+        true
+    );
+    for (DataSegment ds : baseSegments) {
+      announceSegmentForServer(druidServer, ds, zkPathsConfig, jsonMapper);
+    }
     announceSegmentForServer(druidServer, segment, zkPathsConfig, jsonMapper);
     Assert.assertTrue(timing.forWaiting().awaitLatch(segmentViewInitLatch));
     Assert.assertTrue(timing.forWaiting().awaitLatch(segmentAddedLatch));
-
-    TimelineLookup<String, ServerSelector> timeline = brokerServerView.getTimeline(
-        (new TableDataSource("test_broker_server_view")).getAnalysis()
+    Thread.sleep(10);
+    TimelineLookup timeline = brokerServerView.getTimeline(
+        JoinDataSource.forDataSource(new TableDataSource(dataSource)), false
     ).get();
-    List<TimelineObjectHolder<String, ServerSelector>> serverLookupRes = timeline.lookup(intervals);
+    List<TimelineObjectHolder> serverLookupRes = (List<TimelineObjectHolder>) timeline.lookup(
+        Intervals.of(
+            "2014-10-20T00:00:00Z/P1D"
+        )
+    );
     Assert.assertEquals(1, serverLookupRes.size());
 
+    TimelineLookup materializedTimeline = brokerServerView.getTimeline(
+        JoinDataSource.forDataSource(new TableDataSource(baseDataSource)), true).get();
+    List<TimelineObjectHolder> materializedServerLookupRes = (List<TimelineObjectHolder>) materializedTimeline.lookup(
+        Intervals.of(
+            "2014-10-20T00:00:00Z/P1D"
+        )
+    );
+    Assert.assertEquals(2, materializedServerLookupRes.size());
+
+
     TimelineObjectHolder<String, ServerSelector> actualTimelineObjectHolder = serverLookupRes.get(0);
-    Assert.assertEquals(intervals, actualTimelineObjectHolder.getInterval());
+    Assert.assertEquals(Intervals.of("2014-10-20T00:00:00Z/P1D"), actualTimelineObjectHolder.getInterval());
     Assert.assertEquals("v1", actualTimelineObjectHolder.getVersion());
 
     PartitionHolder<ServerSelector> actualPartitionHolder = actualTimelineObjectHolder.getObject();
@@ -127,16 +194,15 @@ public class BrokerServerViewTest extends CuratorTestBase
     Assert.assertFalse(selector.isEmpty());
     Assert.assertEquals(segment, selector.getSegment());
     Assert.assertEquals(druidServer, selector.pick(null).getServer());
-    Assert.assertNotNull(timeline.findChunk(intervals, "v1", partition));
 
     unannounceSegmentForServer(druidServer, segment, zkPathsConfig);
     Assert.assertTrue(timing.forWaiting().awaitLatch(segmentRemovedLatch));
 
     Assert.assertEquals(
         0,
-        timeline.lookup(intervals).size()
+        ((List<TimelineObjectHolder>) timeline.lookup(Intervals.of("2014-10-20T00:00:00Z/P1D"))).size()
     );
-    Assert.assertNull(timeline.findChunk(intervals, "v1", partition));
+    Assert.assertNull(timeline.findEntry(Intervals.of("2014-10-20T00:00:00Z/P1D"), "v1"));
   }
 
   @Test
@@ -152,9 +218,22 @@ public class BrokerServerViewTest extends CuratorTestBase
 
     final List<DruidServer> druidServers = Lists.transform(
         ImmutableList.of("locahost:0", "localhost:1", "localhost:2", "localhost:3", "localhost:4"),
-        hostname -> setupHistoricalServer("default_tier", hostname, 0)
+        input -> new DruidServer(
+            input,
+            input,
+            null,
+            10000000L,
+            ServerType.HISTORICAL,
+            "default_tier",
+            0
+        )
     );
 
+    for (DruidServer druidServer : druidServers) {
+      setupZNodeForServer(druidServer, zkPathsConfig, jsonMapper);
+    }
+    Map<Short, BaseShardSpecsSpec> multiMaterializedSpecs = new HashMap<>();
+    multiMaterializedSpecs.put((short) 0, new BaseShardSpecsSpec(0, 1, "v1"));
     final List<DataSegment> segments = Lists.transform(
         ImmutableList.of(
             Pair.of("2011-04-01/2011-04-03", "v1"),
@@ -162,7 +241,17 @@ public class BrokerServerViewTest extends CuratorTestBase
             Pair.of("2011-04-01/2011-04-09", "v2"),
             Pair.of("2011-04-06/2011-04-09", "v3"),
             Pair.of("2011-04-01/2011-04-02", "v3")
-        ), input -> dataSegmentWithIntervalAndVersion(input.lhs, input.rhs)
+        ), input -> {
+          int mapingBuckets = Intervals.of(input.lhs).toDuration().toStandardHours().getHours();
+          return dataSegmentWithIntervalAndVersion(dataSource, input.lhs, input.rhs, new MaterializedSpec(
+                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                       null,
+                                                       multiMaterializedSpecs,
+                                                       (short) mapingBuckets
+                                                   ),
+                                                   true
+          );
+        }
     );
 
     for (int i = 0; i < 5; ++i) {
@@ -172,7 +261,7 @@ public class BrokerServerViewTest extends CuratorTestBase
     Assert.assertTrue(timing.forWaiting().awaitLatch(segmentAddedLatch));
 
     TimelineLookup timeline = brokerServerView.getTimeline(
-        (new TableDataSource("test_broker_server_view")).getAnalysis()
+        JoinDataSource.forDataSource(new TableDataSource(dataSource)), false
     ).get();
     assertValues(
         Arrays.asList(
@@ -195,8 +284,8 @@ public class BrokerServerViewTest extends CuratorTestBase
     segmentRemovedLatch = new CountDownLatch(4);
 
     timeline = brokerServerView.getTimeline(
-        (new TableDataSource("test_broker_server_view")).getAnalysis()
-    ).get();
+        JoinDataSource.forDataSource(new TableDataSource(dataSource))
+        , false).get();
     assertValues(
         Arrays.asList(
             createExpected("2011-04-01/2011-04-02", "v3", druidServers.get(4), segments.get(4)),
@@ -249,11 +338,23 @@ public class BrokerServerViewTest extends CuratorTestBase
 
     final List<DruidServer> druidServers = Lists.transform(
         ImmutableList.of("locahost:0", "localhost:1", "localhost:2", "localhost:3", "localhost:4"),
-        hostname -> setupHistoricalServer("default_tier", hostname, 0)
+        input -> new DruidServer(
+            input,
+            input,
+            null,
+            10000000L,
+            ServerType.HISTORICAL,
+            "default_tier",
+            0
+        )
     );
 
     setupZNodeForServer(druidBroker, zkPathsConfig, jsonMapper);
-
+    for (DruidServer druidServer : druidServers) {
+      setupZNodeForServer(druidServer, zkPathsConfig, jsonMapper);
+    }
+    Map<Short, BaseShardSpecsSpec> multiMaterializedSpecs = new HashMap<>();
+    multiMaterializedSpecs.put((short) 0, new BaseShardSpecsSpec(0, 1, "v1"));
     final List<DataSegment> segments = Lists.transform(
         ImmutableList.of(
             Pair.of("2011-04-01/2011-04-03", "v1"),
@@ -262,10 +363,33 @@ public class BrokerServerViewTest extends CuratorTestBase
             Pair.of("2011-04-06/2011-04-09", "v3"),
             Pair.of("2011-04-01/2011-04-02", "v3")
         ),
-        input -> dataSegmentWithIntervalAndVersion(input.lhs, input.rhs)
+        input -> {
+          long mapingBuckets = Intervals.of(input.lhs).toDuration().toStandardHours().getHours();
+          return dataSegmentWithIntervalAndVersion(dataSource, input.lhs, input.rhs, new MaterializedSpec(
+                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                       null,
+                                                       multiMaterializedSpecs,
+                                                       (short) mapingBuckets
+                                                   ),
+                                                   true
+          );
+        }
     );
 
-    DataSegment brokerSegment = dataSegmentWithIntervalAndVersion("2011-04-01/2011-04-11", "v4");
+    Interval interval = Intervals.of("2011-04-01/2011-04-11");
+    long mapingBuckets = interval.toDuration().toStandardHours().getHours();
+    DataSegment brokerSegment = dataSegmentWithIntervalAndVersion(
+        dataSource,
+        "2011-04-01/2011-04-11",
+        "v4",
+        new MaterializedSpec(
+            MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+            null,
+            multiMaterializedSpecs,
+            (short) mapingBuckets
+        ),
+        true
+    );
     announceSegmentForServer(druidBroker, brokerSegment, zkPathsConfig, jsonMapper);
     for (int i = 0; i < 5; ++i) {
       announceSegmentForServer(druidServers.get(i), segments.get(i), zkPathsConfig, jsonMapper);
@@ -274,7 +398,7 @@ public class BrokerServerViewTest extends CuratorTestBase
     Assert.assertTrue(timing.forWaiting().awaitLatch(segmentAddedLatch));
 
     TimelineLookup timeline = brokerServerView.getTimeline(
-        (new TableDataSource("test_broker_server_view")).getAnalysis()
+        JoinDataSource.forDataSource(new TableDataSource(dataSource)), false
     ).get();
 
     assertValues(
@@ -298,7 +422,7 @@ public class BrokerServerViewTest extends CuratorTestBase
     segmentRemovedLatch = new CountDownLatch(5);
 
     timeline = brokerServerView.getTimeline(
-        (new TableDataSource("test_broker_server_view")).getAnalysis()
+        JoinDataSource.forDataSource(new TableDataSource(dataSource)), false
     ).get();
 
     // expect same set of segments as before
@@ -338,14 +462,39 @@ public class BrokerServerViewTest extends CuratorTestBase
     final DruidServer server11 = setupHistoricalServer(tier1, "localhost:1", 1);
     final DruidServer server21 = setupHistoricalServer(tier2, "localhost:2", 1);
 
-    final DataSegment segment1 = dataSegmentWithIntervalAndVersion("2020-01-01/P1D", "v1");
+    final DataSegment segment1 = dataSegmentWithIntervalAndVersion(dataSource,
+                                                                   "2020-01-01/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(server11, segment1, zkPathsConfig, jsonMapper);
 
-    final DataSegment segment2 = dataSegmentWithIntervalAndVersion("2020-01-02/P1D", "v1");
+    final DataSegment segment2 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-02/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(server11, segment2, zkPathsConfig, jsonMapper);
     announceSegmentForServer(server21, segment2, zkPathsConfig, jsonMapper);
 
-    final DataSegment segment3 = dataSegmentWithIntervalAndVersion("2020-01-03/P1D", "v1");
+    final DataSegment segment3 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-03/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(server21, segment3, zkPathsConfig, jsonMapper);
 
     // Wait for the segments to be added
@@ -354,7 +503,7 @@ public class BrokerServerViewTest extends CuratorTestBase
 
     // Get the timeline for the datasource
     TimelineLookup<String, ServerSelector> timeline = brokerServerView.getTimeline(
-        (new TableDataSource(segment1.getDataSource())).getAnalysis()
+        JoinDataSource.forDataSource(new TableDataSource(dataSource)), false
     ).get();
 
     // Verify that the timeline has no entry for the interval of segment 1
@@ -398,14 +547,38 @@ public class BrokerServerViewTest extends CuratorTestBase
     final DruidServer realtimeServer = setupDruidServer(ServerType.INDEXER_EXECUTOR, null, "realtime:1", 1);
     final DruidServer historicalServer = setupHistoricalServer("tier1", "historical:2", 1);
 
-    final DataSegment segment1 = dataSegmentWithIntervalAndVersion("2020-01-01/P1D", "v1");
+    final DataSegment segment1 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-01/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(realtimeServer, segment1, zkPathsConfig, jsonMapper);
 
-    final DataSegment segment2 = dataSegmentWithIntervalAndVersion("2020-01-02/P1D", "v1");
+    final DataSegment segment2 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-02/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(realtimeServer, segment2, zkPathsConfig, jsonMapper);
     announceSegmentForServer(historicalServer, segment2, zkPathsConfig, jsonMapper);
 
-    final DataSegment segment3 = dataSegmentWithIntervalAndVersion("2020-01-03/P1D", "v1");
+    final DataSegment segment3 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-03/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(historicalServer, segment3, zkPathsConfig, jsonMapper);
 
     // Wait for the segments to be added
@@ -414,7 +587,7 @@ public class BrokerServerViewTest extends CuratorTestBase
 
     // Get the timeline for the datasource
     TimelineLookup<String, ServerSelector> timeline = brokerServerView.getTimeline(
-        (new TableDataSource(segment1.getDataSource())).getAnalysis()
+        JoinDataSource.forDataSource(new TableDataSource(dataSource)), false
     ).get();
 
     // Verify that the timeline has no entry for the interval of segment 1
@@ -460,14 +633,38 @@ public class BrokerServerViewTest extends CuratorTestBase
     final DruidServer server11 = setupHistoricalServer(tier1, "localhost:1", 1);
     final DruidServer server21 = setupHistoricalServer(tier2, "localhost:2", 1);
 
-    final DataSegment segment1 = dataSegmentWithIntervalAndVersion("2020-01-01/P1D", "v1");
+    final DataSegment segment1 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-01/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(server11, segment1, zkPathsConfig, jsonMapper);
 
-    final DataSegment segment2 = dataSegmentWithIntervalAndVersion("2020-01-02/P1D", "v1");
+    final DataSegment segment2 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-02/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(server11, segment2, zkPathsConfig, jsonMapper);
     announceSegmentForServer(server21, segment2, zkPathsConfig, jsonMapper);
 
-    final DataSegment segment3 = dataSegmentWithIntervalAndVersion("2020-01-03/P1D", "v1");
+    final DataSegment segment3 = dataSegmentWithIntervalAndVersion(dataSource, "2020-01-03/P1D", "v1",
+                                                                   new MaterializedSpec(
+                                                                       MaterializedSpec.TYPE_DIFF_SEGMENT_GRAN,
+                                                                       null,
+                                                                       multiMaterializedSpecs,
+                                                                       (short) 1
+                                                                   ),
+                                                                   true
+    );
     announceSegmentForServer(server21, segment3, zkPathsConfig, jsonMapper);
 
     // Wait for the segments to be added
@@ -476,7 +673,7 @@ public class BrokerServerViewTest extends CuratorTestBase
 
     // Get the timeline for the datasource
     TimelineLookup<String, ServerSelector> timeline = brokerServerView.getTimeline(
-        (new TableDataSource(segment1.getDataSource())).getAnalysis()
+        JoinDataSource.forDataSource(new TableDataSource(dataSource)), false
     ).get();
 
     // Verify that the timeline has no entry for the interval of segment 1
@@ -651,8 +848,16 @@ public class BrokerServerViewTest extends CuratorTestBase
         getSmileMapper(),
         EasyMock.createMock(HttpClient.class)
     );
-
+    DerivativeDataSourceManager mockClient = EasyMock.createMock(DerivativeDataSourceManager.class);
+    EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSource)).andStubReturn(createSubDerivativeDataSources());
+    EasyMock.expect(mockClient.getDirectBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+    EasyMock.expect(mockClient.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+    EasyMock.replay(mockClient);
     brokerServerView = new BrokerServerView(
+        EasyMock.createMock(QueryToolChestWarehouse.class),
+        EasyMock.createMock(QueryWatcher.class),
+        getSmileMapper(),
+        EasyMock.createMock(HttpClient.class),
         druidClientFactory,
         baseView,
         new HighestPriorityTierSelectorStrategy(new RandomServerSelectorStrategy()),
@@ -676,33 +881,49 @@ public class BrokerServerViewTest extends CuratorTestBase
           {
             return ignoredTiers;
           }
-        }
+        },
+        mockClient
     );
 
     baseView.start();
     brokerServerView.start();
   }
 
-  private DataSegment dataSegmentWithIntervalAndVersion(String intervalStr, String version)
+  private ImmutableMap<String, DerivativeDataSource> createSubDerivativeDataSources()
   {
-    return DataSegment.builder()
-                      .dataSource("test_broker_server_view")
-                      .interval(Intervals.of(intervalStr))
-                      .loadSpec(
-                          ImmutableMap.of(
-                              "type",
-                              "local",
-                              "path",
-                              "somewhere"
-                          )
-                      )
-                      .version(version)
-                      .dimensions(ImmutableList.of())
-                      .metrics(ImmutableList.of())
-                      .shardSpec(NoneShardSpec.instance())
-                      .binaryVersion(9)
-                      .size(0)
-                      .build();
+    List<DerivativeDataSource> list = new ArrayList<>();
+    list.add(new DerivativeDataSource(dataSource, baseDataSource, Granularities.DAY));
+    return ImmutableMap.copyOf(list.stream().collect(Collectors.toMap(ds -> ds.getDataSource(), ds -> ds)));
+  }
+
+  private DataSegment dataSegmentWithIntervalAndVersion(
+      String dataSource,
+      String intervalStr,
+      String version,
+      MaterializedSpec materializedSegment,
+      boolean isMaterialized
+  )
+  {
+    DataSegment.Builder ds = DataSegment.builder()
+                                        .dataSource(dataSource)
+                                        .interval(Intervals.of(intervalStr))
+                                        .loadSpec(
+                                            ImmutableMap.of(
+                                                "type",
+                                                "local",
+                                                "path",
+                                                "somewhere"
+                                            )
+                                        )
+                                        .version(version)
+                                        .metrics(ImmutableList.of("cost"))
+                                        .shardSpec(NoneShardSpec.instance())
+                                        .binaryVersion(9)
+                                        .size(1024);
+    if (isMaterialized) {
+      ds.storeMaterializedSegment(materializedSegment);
+    }
+    return ds.build();
   }
 
   public ObjectMapper getSmileMapper()

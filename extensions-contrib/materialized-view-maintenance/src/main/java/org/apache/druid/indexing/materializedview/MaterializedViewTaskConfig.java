@@ -20,6 +20,10 @@
 package org.apache.druid.indexing.materializedview;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.annotations.VisibleForTesting;
+import org.apache.druid.indexer.partitions.DynamicPartitionsSpec;
+import org.apache.druid.indexer.partitions.HashedPartitionsSpec;
+import org.apache.druid.indexer.partitions.PartitionsSpec;
 import org.joda.time.Period;
 
 public class MaterializedViewTaskConfig 
@@ -30,5 +34,70 @@ public class MaterializedViewTaskConfig
   public Period getTaskCheckDuration()
   {
     return taskCheckDuration;
+  }
+
+  @VisibleForTesting
+  public void setTaskCheckDuration(Period taskCheckDuration)
+  {
+    this.taskCheckDuration = taskCheckDuration;
+  }
+
+  @JsonProperty
+  private Period hadoopIntervalCheckDuration = new Period("P3D");
+
+  public Period getHadoopIntervalCheckDuration()
+  {
+    return hadoopIntervalCheckDuration;
+  }
+
+  public void setHadoopIntervalCheckDuration(Period hadoopIntervalCheckDuration)
+  {
+    this.hadoopIntervalCheckDuration = hadoopIntervalCheckDuration;
+  }
+
+  @JsonProperty
+  private boolean enableTruncateIngestionTime = true;
+
+  public boolean isEnableTruncateIngestionTime()
+  {
+    return enableTruncateIngestionTime;
+  }
+
+  public void setEnableTruncateIngestionTime(boolean enableTruncateIngestionTime)
+  {
+    this.enableTruncateIngestionTime = enableTruncateIngestionTime;
+  }
+
+  @JsonProperty
+  private int maxNumSegmentsToMerge = 30;
+
+  public int getMaxNumSegmentsToMerge()
+  {
+    return maxNumSegmentsToMerge;
+  }
+
+  @JsonProperty
+  private PartitionsSpec backupOverwritePartitionsSpec = getDefaultPartitionsSpec(true, null);
+
+  public PartitionsSpec getBackupOverwritePartitionsSpec()
+  {
+    return backupOverwritePartitionsSpec;
+  }
+
+  @JsonProperty
+  private PartitionsSpec backupAppendingPartitionsSpec = getDefaultPartitionsSpec(false, null);
+
+  public PartitionsSpec getBackupAppendingPartitionsSpec()
+  {
+    return backupAppendingPartitionsSpec;
+  }
+
+  public static PartitionsSpec getDefaultPartitionsSpec(boolean isOverwrite, Integer maxRowsPerSegment)
+  {
+    if (isOverwrite) {
+      return new HashedPartitionsSpec(maxRowsPerSegment, null, null);
+    } else {
+      return new DynamicPartitionsSpec(Integer.MAX_VALUE, null);
+    }
   }
 }
