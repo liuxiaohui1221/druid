@@ -126,7 +126,7 @@
         <httpclient.version>4.5.13</httpclient.version>
         <!-- When upgrading ZK, edit docs and integration tests as well (integration-tests/docker-base/setup.sh) -->
         <zookeeper.version>3.8.4</zookeeper.version>
-        <checkerframework.version>2.5.7</checkerframework.version>
+        <checkerframework.version>3.48.1</checkerframework.version>
         <com.google.apis.client.version>2.2.0</com.google.apis.client.version>
         <com.google.http.client.apis.version>1.42.3</com.google.http.client.apis.version>
         <com.google.apis.compute.version>v1-rev20230606-2.0.0</com.google.apis.compute.version>
