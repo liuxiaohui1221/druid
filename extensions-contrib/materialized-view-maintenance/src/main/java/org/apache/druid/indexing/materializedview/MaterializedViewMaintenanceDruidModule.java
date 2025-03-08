@@ -28,11 +28,12 @@ import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.discovery.NodeRole;
 import org.apache.druid.guice.JsonConfigProvider;
 import org.apache.druid.guice.annotations.LoadScope;
+import org.apache.druid.indexing.common.task.materializedview.MaterializedViewTask;
 import org.apache.druid.initialization.DruidModule;
 
 import java.util.List;
 
-@LoadScope(roles = NodeRole.OVERLORD_JSON_NAME)
+@LoadScope(roles = {NodeRole.OVERLORD_JSON_NAME, NodeRole.COORDINATOR_JSON_NAME, NodeRole.BROKER_JSON_NAME})
 public class MaterializedViewMaintenanceDruidModule implements DruidModule 
 {
   @Override
@@ -43,6 +44,7 @@ public class MaterializedViewMaintenanceDruidModule implements DruidModule
             .registerSubtypes(
                 new NamedType(NativeBatchMaterializedViewSupervisorSpec.class, "materialized_view"),
                 // new NamedType(HadoopMaterializedViewSupervisorSpec.class, "derivativeDataSource"),
+                new NamedType(MaterializedViewTask.class, "index_materialized_view"),
                 new NamedType(DerivativeDataSourceMetadata.class, "materialized_view")
             )
     );

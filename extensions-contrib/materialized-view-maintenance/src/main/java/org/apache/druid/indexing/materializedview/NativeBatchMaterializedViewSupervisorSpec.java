@@ -51,6 +51,7 @@ import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.metadata.MetadataSupervisorManager;
 import org.apache.druid.metadata.SqlSegmentsMetadataManager;
 import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.segment.realtime.firehose.ChatHandlerProvider;
 import org.apache.druid.server.security.AuthorizerMapper;
 import org.apache.druid.timeline.BaseShardSpecsSpec;
@@ -86,14 +87,15 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
   private final boolean suspended;
   private final SegmentCacheManagerFactory segmentCacheManagerFactory;
   private final RetryPolicyFactory retryPolicyFactory;
-  private ParallelIndexTuningConfig actualTuningConfig;
+  private final ParallelIndexTuningConfig actualTuningConfig;
 
   public NativeBatchMaterializedViewSupervisorSpec(
       @JsonProperty("baseDataSource") String baseDataSource,
       @JsonProperty("dimensionsSpec") @Nullable DimensionsSpec dimensionsSpec,
       @JsonProperty("metricsSpec") @Nullable AggregatorFactory[] aggregators,
       @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec,
-      @JsonProperty("tuningConfig") ParallelIndexTuningConfig tuningConfig,
+      @JsonProperty("filter") @Nullable DimFilter dimFilter,
+      @JsonProperty("tuningConfig") @Nullable ParallelIndexTuningConfig tuningConfig,
       @JsonProperty("dataSource") String dataSourceName,
       @JsonProperty("policyConfig") @Nullable PolicyConfig policyConfig,
       @JsonProperty("context") @Nullable Map<String, Object> context,
@@ -112,7 +114,7 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
       @JacksonInject RetryPolicyFactory retryPolicyFactory
   )
   {
-    super(baseDataSource, dimensionsSpec, aggregators, granularitySpec, tuningConfig,
+    super(baseDataSource, dimensionsSpec, aggregators, granularitySpec, dimFilter, tuningConfig,
           dataSourceName, context, suspended, supervisorStateManagerConfig
     );
     Preconditions.checkArgument(
@@ -175,7 +177,10 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
       )
           .segments(segments, appendToExisting)
           .tuningConfig(actualTuningConfig)
+          .dimensionsSpec(getDimensionsSpec())
+          .metricsSpec(getMetricsSpec())
           .granularitySpec(granularitySpec)
+          .dimFilter(dimFilter)
           .context(context)
           .build();
     }
@@ -394,6 +399,7 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
         getDimensionsSpec(),
         getMetricsSpec(),
         granularitySpec,
+        dimFilter,
         tuningConfig,
         dataSourceName,
         policyConfig,
@@ -422,6 +428,7 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
         getDimensionsSpec(),
         getMetricsSpec(),
         granularitySpec,
+        dimFilter,
         tuningConfig,
         dataSourceName,
         policyConfig,

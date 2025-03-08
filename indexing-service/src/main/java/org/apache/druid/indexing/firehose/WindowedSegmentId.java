@@ -34,7 +34,7 @@ import java.util.Objects;
  * <p>
  * This class is intended for serialization in specs.
  */
-public class WindowedSegmentId
+public class WindowedSegmentId implements Comparable<WindowedSegmentId>
 {
   // This is of the form used by SegmentId.
   private final String segmentId;
@@ -92,6 +92,12 @@ public class WindowedSegmentId
   public int hashCode()
   {
     return Objects.hash(segmentId, intervals);
+  }
+
+  @Override
+  public int compareTo(WindowedSegmentId windowedSegmentId)
+  {
+    return getSegmentId().compareTo(windowedSegmentId.getSegmentId());
   }
 
   @Override

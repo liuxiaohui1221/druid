@@ -44,7 +44,6 @@ public class MultipleSpecificSegmentSpec implements QuerySegmentSpec
 
   private volatile List<Interval> intervals = null;
 
-  @JsonCreator
   public MultipleSpecificSegmentSpec(
       @JsonProperty("segments") List<SegmentDescriptor> descriptors
   )

@@ -60,6 +60,7 @@ import org.apache.druid.indexing.common.task.CompactionIOConfig;
 import org.apache.druid.indexing.common.task.CompactionTask;
 import org.apache.druid.indexing.common.task.CurrentSubTaskHolder;
 import org.apache.druid.indexing.common.task.IndexTask.IndexTuningConfig;
+import org.apache.druid.indexing.common.task.PendingSegmentAllocatingTask;
 import org.apache.druid.indexing.common.task.TaskResource;
 import org.apache.druid.indexing.common.task.Tasks;
 import org.apache.druid.indexing.common.task.batch.parallel.ParallelIndexIOConfig;
@@ -83,6 +84,7 @@ import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
 import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.segment.DimensionHandler;
 import org.apache.druid.segment.IndexIO;
 import org.apache.druid.segment.QueryableIndex;
@@ -122,7 +124,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-public class MaterializedViewTask extends AbstractBatchIndexTask implements ChatHandler
+public class MaterializedViewTask extends AbstractBatchIndexTask implements PendingSegmentAllocatingTask
 {
   private static final Logger log = new Logger(MaterializedViewTask.class);
   /**
@@ -150,6 +152,8 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
   private final ClientCompactionTaskTransformSpec transformSpec;
   @Nullable
   private final ClientTaskGranularitySpec granularitySpec;
+  @Nullable
+  private final DimFilter dimFilter;
   @Nullable
   private final ParallelIndexTuningConfig tuningConfig;
   @JsonIgnore
@@ -180,6 +184,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
       @JsonProperty("metricsSpec") @Nullable final AggregatorFactory[] metricsSpec,
       @JsonProperty("transformSpec") @Nullable final ClientCompactionTaskTransformSpec transformSpec,
       @JsonProperty("granularitySpec") @Nullable final ClientTaskGranularitySpec granularitySpec,
+      @JsonProperty("dimFilter") @Nullable final DimFilter dimFilter,
       @JsonProperty("tuningConfig") @Nullable final TuningConfig tuningConfig,
       @JsonProperty("context") @Nullable final Map<String, Object> context,
       @JacksonInject SegmentCacheManagerFactory segmentCacheManagerFactory
@@ -214,6 +219,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
     this.metricsSpec = metricsSpec;
     this.transformSpec = transformSpec;
     this.granularitySpec = granularitySpec;
+    this.dimFilter = dimFilter;
     this.tuningConfig = tuningConfig != null ? getTuningConfig(tuningConfig) : null;
 
     this.segmentProvider = new SegmentProvider(baseDataSource, this.ioConfig.getInputSpec());
@@ -375,23 +381,6 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
   @Override
   public TaskStatus runTask(TaskToolbox toolbox) throws Exception
   {
-//    final List<ParallelIndexIngestionSpec> ingestionSpecs = createIngestionSchema(
-//        baseDataSource,
-//        dataSource,
-//        UTC_CLOCK,
-//        toolbox,
-//        getTaskLockHelper().getLockGranularityToUse(),
-//        segmentProvider,
-//        partitionConfigurationManager,
-//        dimensionsSpec,
-//        metricsSpec,
-//        transformSpec,
-//        granularitySpec,
-//        toolbox.getCoordinatorClient(),
-//        segmentCacheManagerFactory,
-//        ioConfig.appendToExisting(),
-//        ioConfig.isDropExisting()
-//    );
     final List<ParallelIndexIngestionSpec> ingestionSpecs = createIngestionSchema(
         baseDataSource,
         dataSource,
@@ -405,6 +394,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
         transformSpec,
         metricsSpec,
         granularitySpec,
+        dimFilter,
         toolbox.getCoordinatorClient(),
         segmentCacheManagerFactory,
         getMetricBuilder()
@@ -523,6 +513,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
       @Nullable final ClientCompactionTaskTransformSpec transformSpec,
       @Nullable final AggregatorFactory[] metricsSpec,
       @Nullable final ClientTaskGranularitySpec granularitySpec,
+      @Nullable final DimFilter dimFilter,
       final CoordinatorClient coordinatorClient,
       final SegmentCacheManagerFactory segmentCacheManagerFactory,
       final ServiceMetricEvent.Builder metricBuilder
@@ -603,6 +594,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
                     toolbox,
                     dataSchema,
                     null,
+                    dimFilter,
                     segmentProvider.getCandidateMaterializedSegments(),
                     coordinatorClient,
                     segmentCacheManagerFactory,
@@ -646,6 +638,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
                   toolbox,
                   dataSchema,
                   null,
+                  dimFilter,
                   segmentProvider.getCandidateMaterializedSegments(),
                   coordinatorClient,
                   segmentCacheManagerFactory,
@@ -719,6 +712,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
       TaskToolbox toolbox,
       DataSchema dataSchema,
       @Nullable Interval interval,
+      @Nullable DimFilter dimFilter,
       List<WindowedSegmentId> segmentIds,
       CoordinatorClient coordinatorClient,
       SegmentCacheManagerFactory segmentLoaderFactory,
@@ -731,7 +725,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
             baseDataSource,
             interval,
             interval == null ? segmentIds : null,
-            null,
+            dimFilter,
             dataSchema.getDimensionsSpec().getDimensionNames(),
             Arrays.stream(dataSchema.getAggregators()).map(AggregatorFactory::getName).collect(Collectors.toList()),
             toolbox.getIndexIO(),
@@ -834,6 +828,12 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
       throw new ISE("Failed to merge aggregators[%s]", aggregatorFactories);
     }
     return mergedAggregators;
+  }
+
+  @Override
+  public String getTaskAllocatorId()
+  {
+    return getGroupId();
   }
 
   @VisibleForTesting
@@ -942,6 +942,8 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
     @Nullable
     private ClientTaskGranularitySpec granularitySpec;
     @Nullable
+    private DimFilter dimFilter;
+    @Nullable
     private TuningConfig tuningConfig;
     @Nullable
     private Map<String, Object> context;
@@ -1004,6 +1006,12 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
       return this;
     }
 
+    public Builder dimFilter(DimFilter dimFilter)
+    {
+      this.dimFilter = dimFilter;
+      return this;
+    }
+
     public Builder tuningConfig(TuningConfig tuningConfig)
     {
       this.tuningConfig = tuningConfig;
@@ -1031,6 +1039,7 @@ public class MaterializedViewTask extends AbstractBatchIndexTask implements Chat
           metricsSpec,
           transformSpec,
           granularitySpec,
+          dimFilter,
           tuningConfig,
           context,
           segmentCacheManagerFactory

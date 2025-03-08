@@ -28,7 +28,7 @@
     </parent>
 
     <groupId>org.apache.druid</groupId>
-    <artifactId>druid</artifactId>
+    <artifactId>druid-mv</artifactId>
     <version>30.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
@@ -220,7 +220,7 @@
         <module>extensions-contrib/redis-cache</module>
         <!--<module>extensions-contrib/opentsdb-emitter</module>-->
         <module>extensions-contrib/materialized-view-maintenance</module>
-        <module>extensions-contrib/materialized-view-selection</module>
+        <!--<module>extensions-contrib/materialized-view-selection</module>-->
         <module>extensions-contrib/momentsketch</module>
         <module>extensions-contrib/moving-average-query</module>
         <module>extensions-contrib/tdigestsketch</module>

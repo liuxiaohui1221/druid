@@ -37,6 +37,7 @@ import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.metadata.MetadataSupervisorManager;
 import org.apache.druid.metadata.SqlSegmentsMetadataManager;
 import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.segment.indexing.DataSchema;
 import org.apache.druid.segment.indexing.TuningConfig;
 import org.apache.druid.segment.indexing.granularity.ArbitraryGranularitySpec;
@@ -59,6 +60,7 @@ public abstract class MaterializedViewSupervisorSpec implements SupervisorSpec
   private final DimensionsSpec dimensionsSpec;
   private final AggregatorFactory[] aggregators;
   protected final ClientTaskGranularitySpec granularitySpec;
+  protected final DimFilter dimFilter;
   private final TuningConfig tuningConfig;
   private final String dataSourceName;
   private final Map<String, Object> context;
@@ -72,6 +74,7 @@ public abstract class MaterializedViewSupervisorSpec implements SupervisorSpec
       @JsonProperty("dimensionsSpec") DimensionsSpec dimensionsSpec,
       @JsonProperty("metricsSpec") AggregatorFactory[] aggregators,
       @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec,
+      @JsonProperty("dimFilter") DimFilter dimFilter,
       @JsonProperty("tuningConfig") TuningConfig tuningConfig,
       @JsonProperty("dataSource") String dataSourceName,
       @JsonProperty("context") Map<String, Object> context,
@@ -103,6 +106,7 @@ public abstract class MaterializedViewSupervisorSpec implements SupervisorSpec
     }
     this.tuningConfig = tuningConfig;
     this.granularitySpec = granularitySpec;
+    this.dimFilter = dimFilter;
     this.dataSourceName = dataSourceName;
     this.context = context == null ? new HashMap<>() : context;
     this.supervisorStateManagerConfig = supervisorStateManagerConfig;

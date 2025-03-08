@@ -43,17 +43,6 @@ public class MaterializedViewIOConfig implements IOConfig
   @JsonCreator
   public MaterializedViewIOConfig(
       @JsonProperty("inputSpec") MaterializedViewInputSpec inputSpec,
-      @JsonProperty("appendToExisting") Boolean appendToExisting,
-      @JsonProperty("isDropExisting") Boolean isDropExisting
-  )
-  {
-    this.inputSpec = inputSpec;
-    this.appendToExisting = appendToExisting;
-    this.isDropExisting = isDropExisting;
-  }
-  @JsonCreator
-  public MaterializedViewIOConfig(
-      @JsonProperty("inputSpec") MaterializedViewInputSpec inputSpec,
       @JsonProperty("appendToExisting") Boolean appendToExisting
   )
   {

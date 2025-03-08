@@ -181,6 +181,7 @@ public class MaterializedViewSupervisorTest extends TaskLockConfigTest
         new AggregatorFactory[]{new LongSumAggregatorFactory("m1", "m1")},
         new ClientTaskGranularitySpec(Granularities.HOUR, Granularities.HOUR, null),
         null,
+        null,
         DATA_SOURCE,
         new PolicyConfig(null, null, null, ingestDuration, null, null, null),
         context,
@@ -205,7 +206,8 @@ public class MaterializedViewSupervisorTest extends TaskLockConfigTest
   @Test
   public void testClearIntervalCacheTimeout()
   {
-    final Map<Interval, AtomicLong> intervals = new ConcurrentHashMap<>();
+    final Map<Interval, AtomicLong> intervals;
+    intervals = new ConcurrentHashMap<>();
     intervals.put(
         Intervals.of("2022-01-01/2022-01-02"),
         new AtomicLong(System.currentTimeMillis()
@@ -2167,6 +2169,7 @@ public class MaterializedViewSupervisorTest extends TaskLockConfigTest
         new DimensionsSpec(Collections.singletonList(new StringDimensionSchema("dim"))),
         new AggregatorFactory[]{new LongSumAggregatorFactory("m1", "m1")},
         new ClientTaskGranularitySpec(segmentGranularity, segmentGranularity, true),
+        null,
         createParallelIndexTuningConfig(forceRollup),
         DATA_SOURCE,
         new PolicyConfig(null, skipPeriodFromLatest, null, ingestDuration, null, enableSecondRegionOverwrite, null),
@@ -2207,6 +2210,7 @@ public class MaterializedViewSupervisorTest extends TaskLockConfigTest
         new DimensionsSpec(Collections.singletonList(new StringDimensionSchema("dim"))),
         new AggregatorFactory[]{new LongSumAggregatorFactory("m1", "m1")},
         new ClientTaskGranularitySpec(Granularities.HOUR, Granularities.HOUR, null),
+        null,
         null,
         DATA_SOURCE,
         null,

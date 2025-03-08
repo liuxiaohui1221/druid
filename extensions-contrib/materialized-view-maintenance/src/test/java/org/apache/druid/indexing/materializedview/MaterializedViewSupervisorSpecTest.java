@@ -179,6 +179,7 @@ public class MaterializedViewSupervisorSpecTest
         new DimensionsSpec(Collections.singletonList(new StringDimensionSchema("user"))),
         new AggregatorFactory[]{new LongSumAggregatorFactory("m1", "m1")},
         new ClientTaskGranularitySpec(segmentGranularity, segmentGranularity, null),
+        null,
         ParallelIndexTuningConfig.defaultConfig(),
         DATA_SOURCE,
         policyConfig,
