@@ -150,6 +150,7 @@ public class QueryResource implements QueryCountStatsProvider
     if (!materializedViewQuery) {
       return baseQuery;
     }
+    log.debug("Materialized view query detected, converting to MaterializedViewQuery:[%s]",baseQuery.getDataSource());
     return new MaterializedViewQuery.Builder().query((BaseQuery) baseQuery).optimizer(mvOptimizer).build();
   }
 

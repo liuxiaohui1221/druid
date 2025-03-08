@@ -95,6 +95,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.jboss.netty.handler.codec.http.HttpResponseStatus;
 import org.joda.time.DateTime;
 import org.joda.time.Interval;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -154,6 +155,7 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
   // happens it is a bug and the new logging may now provide some evidence to reproduce
   // and fix
   private static final long DEFAULT_NUM_SHARDS_WHEN_ESTIMATE_GOES_NEGATIVE = 7L;
+  private static final org.slf4j.Logger log = LoggerFactory.getLogger(ParallelIndexSupervisorTask.class);
 
   private final ParallelIndexIngestionSpec ingestionSchema;
   /**
@@ -1167,12 +1169,14 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
         Tasks.DEFAULT_STORE_COMPACTION_STATE
     );
     final Map<String, Object> storeMaterializedSegmentMap = getContextValue(Tasks.CONTEXT_KEY_STORE_MATERIALIZED_SEGMENTS);
+
     MaterializedSpec materializedSpec = toolbox.getJsonMapper().convertValue(
         storeMaterializedSegmentMap,
         new TypeReference<MaterializedSpec>()
         {
         }
     );
+    log.info("Take materialized segments spec from context: %s", materializedSpec);
     final Function<Set<DataSegment>, Set<DataSegment>> annotateFunction = compactionStateAndMaterializedAnnotateFunction(
         storeCompactionState,
         materializedSpec,

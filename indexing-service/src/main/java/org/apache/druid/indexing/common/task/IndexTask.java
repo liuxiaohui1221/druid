@@ -25,6 +25,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
@@ -105,6 +106,7 @@ import org.apache.druid.server.security.Resource;
 import org.apache.druid.server.security.ResourceAction;
 import org.apache.druid.server.security.ResourceType;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.MaterializedSpec;
 import org.apache.druid.timeline.partition.HashBasedNumberedShardSpec;
 import org.apache.druid.timeline.partition.NumberedShardSpec;
 import org.apache.druid.utils.CircularBuffer;
@@ -931,10 +933,19 @@ public class IndexTask extends AbstractBatchIndexTask implements ChatHandler, Pe
           Tasks.STORE_COMPACTION_STATE_KEY,
           Tasks.DEFAULT_STORE_COMPACTION_STATE
       );
+      final Map<String, Object> storeMaterializedSegmentMap = getContextValue(Tasks.CONTEXT_KEY_STORE_MATERIALIZED_SEGMENTS);
+
+      MaterializedSpec materializedSpec = toolbox.getJsonMapper().convertValue(
+          storeMaterializedSegmentMap,
+          new TypeReference<MaterializedSpec>()
+          {
+          }
+      );
+      log.info("Take materialized segments spec from context: %s", materializedSpec);
       final Function<Set<DataSegment>, Set<DataSegment>> annotateFunction =
           compactionStateAndMaterializedAnnotateFunction(
               storeCompactionState,
-              null,
+              materializedSpec,
               toolbox,
               ingestionSchema
           );

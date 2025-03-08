@@ -156,7 +156,8 @@ public class CompactionState
       List<Object> metricsSpec,
       Map<String, Object> transformSpec,
       Map<String, Object> indexSpec,
-      Map<String, Object> granularitySpec
+      Map<String, Object> granularitySpec,
+      MaterializedSpec storeMaterializedSpec
   )
   {
     CompactionState compactionState = new CompactionState(
@@ -170,7 +171,7 @@ public class CompactionState
 
     return segments -> segments
         .stream()
-        .map(s -> s.withLastCompactionState(compactionState))
+        .map(s -> s.withLastCompactionState(compactionState).withStoreMaterializedSegment(storeMaterializedSpec))
         .collect(Collectors.toSet());
   }
 

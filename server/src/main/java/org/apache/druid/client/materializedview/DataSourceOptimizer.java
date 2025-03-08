@@ -100,6 +100,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
   @Override
   public List<Query> optimize(Query query)
   {
+    log.debug("MaterializedViewOptimizer optimize query start: %s", query);
     long start = System.currentTimeMillis();
     // only TableDataSource can be optimiezed
     if (!(query.getDataSource() instanceof TableDataSource)) {

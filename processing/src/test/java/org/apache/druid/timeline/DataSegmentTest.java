@@ -400,7 +400,8 @@ public class DataSegmentTest
             metricsSpec,
             transformSpec,
             indexSpec,
-            granularitySpec
+            granularitySpec,
+            null
         );
 
     final DataSegment segment1 = DataSegment.builder()

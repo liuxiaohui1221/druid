@@ -1883,7 +1883,8 @@ public class ControllerImpl implements Controller
         metricsSpec,
         transformSpec,
         indexSpec.asMap(jsonMapper),
-        granularitySpec.asMap(jsonMapper)
+        granularitySpec.asMap(jsonMapper),
+        null
     );
   }
 

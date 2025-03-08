@@ -258,7 +258,7 @@ public class DerivativeDataSourceManager
 
     ConcurrentHashMap<String, HashMap<String, DerivativeDataSource>> newDerivatives = groupAndSortedByGranularity(
         derivativeDataSources);
-
+    log.debug("update derivatives: {%s}", newDerivatives);
     ConcurrentHashMap<String, HashMap<String, DerivativeDataSource>> current;
     do {
       current = DERIVATIVES_REF.get();

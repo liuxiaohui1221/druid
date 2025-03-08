@@ -657,7 +657,7 @@ public abstract class AbstractBatchIndexTask extends AbstractTask
 
   public static Function<Set<DataSegment>, Set<DataSegment>> compactionStateAndMaterializedAnnotateFunction(
       boolean storeCompactionState,
-      MaterializedSpec storeMaterializedSpec,
+      MaterializedSpec materializedSpec,
       TaskToolbox toolbox,
       IngestionSpec ingestionSpec
   )
@@ -683,12 +683,13 @@ public abstract class AbstractBatchIndexTask extends AbstractTask
           metricsSpec,
           transformSpec,
           tuningConfig.getIndexSpec().asMap(toolbox.getJsonMapper()),
-          granularitySpec.asMap(toolbox.getJsonMapper())
+          granularitySpec.asMap(toolbox.getJsonMapper()),
+          materializedSpec
       );
-    } else if (storeMaterializedSpec != null) {
+    } else if (materializedSpec != null) {
       return segments -> segments
           .stream()
-          .map(s -> s.withStoreMaterializedSegment(storeMaterializedSpec))
+          .map(s -> s.withStoreMaterializedSegment(materializedSpec))
           .collect(Collectors.toSet());
     } else {
       return Function.identity();
