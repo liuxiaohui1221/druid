@@ -140,8 +140,6 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
     this.segmentCacheManagerFactory = segmentCacheManagerFactory;
     this.retryPolicyFactory = retryPolicyFactory;
     this.tuningConfig.setMaxNumSegmentsToMerge(config.getMaxNumSegmentsToMerge());
-    //copy tuningConfig
-
     this.actualTuningConfig = this.tuningConfig;
     //update actualTuningConfig
     if (this.tuningConfig.getPartitionsSpec() == null

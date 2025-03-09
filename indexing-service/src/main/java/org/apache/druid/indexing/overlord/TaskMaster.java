@@ -48,8 +48,10 @@ import org.apache.druid.server.coordinator.CoordinatorOverlordServiceConfig;
 import org.apache.druid.server.coordinator.stats.CoordinatorRunStats;
 import org.apache.druid.server.metrics.TaskCountStatsProvider;
 import org.apache.druid.server.metrics.TaskSlotCountStatsProvider;
+import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -79,6 +81,7 @@ public class TaskMaster implements TaskCountStatsProvider, TaskSlotCountStatsPro
    * called.
    */
   private volatile boolean initialized;
+  private TaskLockbox taskLockbox;
 
   @Inject
   public TaskMaster(
@@ -105,7 +108,7 @@ public class TaskMaster implements TaskCountStatsProvider, TaskSlotCountStatsPro
     this.taskActionClientFactory = taskActionClientFactory;
 
     this.overlordLeaderSelector = overlordLeaderSelector;
-
+    this.taskLockbox = taskLockbox;
     final DruidNode node = coordinatorOverlordServiceConfig.getOverlordService() == null ? selfNode :
                            selfNode.withService(coordinatorOverlordServiceConfig.getOverlordService());
 
@@ -223,6 +226,10 @@ public class TaskMaster implements TaskCountStatsProvider, TaskSlotCountStatsPro
     finally {
       giant.unlock();
     }
+  }
+
+  public Map<String, List<Interval>> getLockedIntervals(Map<String, Integer> minTaskPriority){
+    return taskLockbox.getLockedIntervals(minTaskPriority);
   }
 
   /**

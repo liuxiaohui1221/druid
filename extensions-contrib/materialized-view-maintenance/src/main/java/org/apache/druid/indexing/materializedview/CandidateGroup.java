@@ -101,4 +101,15 @@ public class CandidateGroup implements Comparable<Integer>
   {
     return Objects.hash(mvInterval, score, isOverwrite, candidateBaseIntervals);
   }
+
+  @Override
+  public String toString()
+  {
+    return "CandidateGroup{" +
+           "mvInterval=" + mvInterval +
+           ", candidateBaseIntervals=" + candidateBaseIntervals +
+           ", score=" + score +
+           ", isOverwrite=" + isOverwrite +
+           '}';
+  }
 }

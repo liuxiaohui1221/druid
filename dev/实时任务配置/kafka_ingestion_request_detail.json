@@ -2,7 +2,7 @@
   "type": "kafka",
   "spec": {
     "dataSchema": {
-      "dataSource": "request-test",
+      "dataSource": "ds_request",
       "timestampSpec": {
         "column": "ts",
         "format": "auto"
@@ -33,7 +33,7 @@
       }
     },
     "ioConfig": {
-      "topic": "metrics",
+      "topic": "request",
       "inputFormat": {
         "type": "json"
       },
@@ -47,7 +47,7 @@
     },
     "tuningConfig": {
       "type": "kafka",
-      "maxRowsPerSegment": 1000000
+      "maxRowsPerSegment": 100000
     }
   }
 }

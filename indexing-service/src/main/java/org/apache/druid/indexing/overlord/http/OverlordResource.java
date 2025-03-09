@@ -658,6 +658,7 @@ public class OverlordResource
 
             try {
               final Object ret = taskActionClient.submit(holder.getAction());
+              log.info("Performed task action:%s",ret);
               retMap = new HashMap<>();
               retMap.put("result", ret);
             }

@@ -32,6 +32,7 @@ import org.apache.druid.client.materializedview.MaterializedViewUtils;
 import org.apache.druid.common.guava.SettableSupplier;
 import org.apache.druid.indexer.TaskStatus;
 import org.apache.druid.indexing.common.task.Task;
+import org.apache.druid.indexing.common.task.Tasks;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.IndexerMetadataStorageCoordinator;
 import org.apache.druid.indexing.overlord.Segments;
@@ -169,8 +170,10 @@ public class MaterializedViewSupervisor implements Supervisor
     this.maxIngestionEndTimeMsForOverwriteHadoop = getNow();
     this.minIngestionStartTimeMsForOverwriteHadoop = this.maxIngestionEndTimeMsForOverwriteHadoop.minus(config.getHadoopIntervalCheckDuration());
     log.info(
-        "Compute ingestion overwrite hadoop time range[%s,%s]",
-        minIngestionStartTimeMsForOverwriteHadoop, maxIngestionEndTimeMsForOverwriteHadoop
+        "Compute ingestion overwrite hadoop time range[%s,%s],maxTaskCount:%s,skipPeriodFromLatest:%s,"
+        + "ingestionTimeRange:%s",
+        minIngestionStartTimeMsForOverwriteHadoop, maxIngestionEndTimeMsForOverwriteHadoop,maxTaskCount,
+        skipPeriodFromLatest,ingestionTimeRange
     );
   }
 
@@ -880,7 +883,6 @@ public class MaterializedViewSupervisor implements Supervisor
     List<CandidateGroup> candidateGroups = groupIntervalBySegmentGranularity(intervalItr);
     final SortedMap<Interval, Pair<String, List<DataSegment>>> taskInputSegments = new TreeMap<>(Comparators.intervalsByStartThenEnd()
                                                                                                             .reversed());
-    Task task = null;
     for (CandidateGroup groupSortedToBuildVersion : candidateGroups) {
       try {
         if (spec.forceOverwrite() || groupSortedToBuildVersion.isOverwrite()) {
@@ -895,7 +897,8 @@ public class MaterializedViewSupervisor implements Supervisor
             );
             versionSegments.rhs.addAll(baseSegments.get(baseIntervalChunk.getBaseInterval()));
           }
-          task = createMaterializedViewTask(new AtomicLong(), taskInputSegments, false);
+
+          createMaterializedViewTask(new AtomicLong(), taskInputSegments, false);
         } else {
           final AtomicLong totalBatchSize = new AtomicLong();
           // create appending task
@@ -921,10 +924,10 @@ public class MaterializedViewSupervisor implements Supervisor
                 if (taskInputSegments.size() <= 1 && versionSegments.rhs.size() == 0) {
                   versionSegments.rhs.add(inputDataSegment);
                   // 提交taskInputSegments，并clear
-                  task = createMaterializedViewTask(totalBatchSize, taskInputSegments, true);
+                  createMaterializedViewTask(totalBatchSize, taskInputSegments, true);
                 } else {
                   // 提交taskInputSegments，并clear
-                  task = createMaterializedViewTask(totalBatchSize, taskInputSegments, true);
+                  createMaterializedViewTask(totalBatchSize, taskInputSegments, true);
 
                   //new batch
                   versionSegments = taskInputSegments.computeIfAbsent(
@@ -940,31 +943,34 @@ public class MaterializedViewSupervisor implements Supervisor
               }
             }
           }
-//          // if singleBatchSegments not reached MIN_TASK_INPUT_SIZE,
-//          // but ending iterate materialized_view interval, still create task
-//          if (runningTaskSets.size() < maxTaskCount && taskInputSegments.size() > 0) {
-//            task = createMaterializedViewTask(new AtomicLong(), taskInputSegments, true);
-//          }
         }
       }
       catch (Exception e) {
         // throw new RuntimeException(e);
-        log.error(e, "Exception task:%s", task);
+        log.error(e, "Exception task candidate segments group:%s", groupSortedToBuildVersion);
       }
     }
     // if singleBatchSegments not reached MIN_TASK_INPUT_SIZE,
     // but ending iterate materialized_view interval, still create task
+    log.info("Submit materialized candidate input intervals[%s].",
+             taskInputSegments.size());
     if (runningTaskSets.size() < maxTaskCount && taskInputSegments.size() > 0) {
       createMaterializedViewTask(new AtomicLong(), taskInputSegments, true);
     }
   }
 
-  private Task createMaterializedViewTask(
+  private void createMaterializedViewTask(
       AtomicLong totalBatchSize,
-      Map<Interval, Pair<String, List<DataSegment>>> taskInputSegments,
+      Map<Interval, Pair<String, List<DataSegment>>> candidateTaskInputSegments,
       boolean appendingToExists
   )
   {
+    Map<Interval, Pair<String, List<DataSegment>>> taskInputSegments=
+        filterLockedTaskInputSegments(candidateTaskInputSegments);
+    log.info("Before segments:%s, find unlocked segments:%s",candidateTaskInputSegments.size(),taskInputSegments.size());
+    if (taskInputSegments.isEmpty()) {
+      return;
+    }
     Task task = spec.createTask(
         taskInputSegments.values().stream()
                          .flatMap(list -> Objects.requireNonNull(list.rhs).stream())
@@ -991,7 +997,31 @@ public class MaterializedViewSupervisor implements Supervisor
     } else {
       throw new IAE("TaskQueue is not present!");
     }
-    return task;
+  }
+
+  private Map<Interval, Pair<String, List<DataSegment>>> filterLockedTaskInputSegments(Map<Interval, Pair<String, List<DataSegment>>> taskInputSegments) {
+    Map<String,Integer> mvPriorityMap= new HashMap<>();
+    mvPriorityMap.put(spec.getBaseDataSource(), Tasks.DEFAULT_BATCH_INDEX_TASK_PRIORITY);
+    Map<String, List<Interval>> lockedIntervals = this.taskMaster.getLockedIntervals(mvPriorityMap);
+    Map<Interval, Pair<String, List<DataSegment>>> filteredTaskInputSegments = new HashMap<>();
+    for (Map.Entry<Interval, Pair<String, List<DataSegment>>> entry : taskInputSegments.entrySet()) {
+      if (!lockedIntervals.containsKey(spec.getBaseDataSource())) {
+        filteredTaskInputSegments.put(entry.getKey(), entry.getValue());
+      }else {
+        List<Interval> intervals = lockedIntervals.get(spec.getBaseDataSource());
+        boolean isLock=false;
+        for(Interval interval : intervals) {
+          if (entry.getKey().overlaps(interval)) {
+            isLock=true;
+            break;
+          }
+        }
+        if (!isLock) {
+          filteredTaskInputSegments.put(entry.getKey(), entry.getValue());
+        }
+      }
+    }
+    return filteredTaskInputSegments;
   }
 
   private List<CandidateGroup> groupIntervalBySegmentGranularity(
