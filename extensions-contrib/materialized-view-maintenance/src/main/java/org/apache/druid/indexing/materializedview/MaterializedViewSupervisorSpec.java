@@ -21,7 +21,6 @@ package org.apache.druid.indexing.materializedview;
 
 import com.fasterxml.jackson.annotation.JacksonInject;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -31,19 +30,10 @@ import org.apache.druid.data.input.impl.DimensionsSpec;
 import org.apache.druid.indexing.common.task.Task;
 import org.apache.druid.indexing.overlord.supervisor.SupervisorSpec;
 import org.apache.druid.indexing.overlord.supervisor.SupervisorStateManagerConfig;
-import org.apache.druid.java.util.common.DateTimes;
-import org.apache.druid.java.util.common.StringUtils;
-import org.apache.druid.java.util.common.granularity.Granularities;
-import org.apache.druid.metadata.MetadataSupervisorManager;
-import org.apache.druid.metadata.SqlSegmentsMetadataManager;
+import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.filter.DimFilter;
-import org.apache.druid.segment.indexing.DataSchema;
 import org.apache.druid.segment.indexing.TuningConfig;
-import org.apache.druid.segment.indexing.granularity.ArbitraryGranularitySpec;
-import org.apache.druid.segment.realtime.firehose.ChatHandlerProvider;
-import org.apache.druid.segment.transform.TransformSpec;
-import org.apache.druid.server.security.AuthorizerMapper;
 import org.apache.druid.timeline.DataSegment;
 import org.joda.time.Interval;
 
@@ -52,6 +42,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.SortedMap;
 
 public abstract class MaterializedViewSupervisorSpec implements SupervisorSpec
 {
@@ -136,7 +127,9 @@ public abstract class MaterializedViewSupervisorSpec implements SupervisorSpec
   public abstract boolean forceOverwrite();
 
   public abstract boolean isOverwritePartition();
-
+  public abstract boolean isReachMVSegmentGran(SortedMap<Interval, Pair<String, List<DataSegment>>> sortedBaseIntervalSegments,
+                                               DataSegment inputDataSegment
+  );
   public Task createTask(List<DataSegment> segments, boolean appendToExisting)
   {
     return createTask(null, null, segments, appendToExisting);

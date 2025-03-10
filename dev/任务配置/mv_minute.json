@@ -21,24 +21,24 @@
         },
         {
           "name": "dur_sum",
-          "fieldName": "value",
+          "fieldName": "dur",
           "type": "doubleSum"
         },
         {
           "name": "dur_min",
-          "fieldName": "value",
+          "fieldName": "dur",
           "type": "doubleMin"
         },
         {
           "name": "dur_max",
-          "fieldName": "value",
+          "fieldName": "dur",
           "type": "doubleMax"
         }
       ],
       "granularitySpec": {
         "type": "uniform",
         "segmentGranularity": "HOUR",
-        "queryGranularity": "NONE"
+        "queryGranularity": "MINUTE"
       }
     },
     "ioConfig": {

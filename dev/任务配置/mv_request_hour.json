@@ -1,0 +1,42 @@
+{
+  "type": "materialized_view",
+  "baseDataSource": "ds_request",
+  "dataSource":"ds_request_hour_test",
+  "granularitySpec": {
+    "type": "uniform",
+    "segmentGranularity": "HOUR",
+    "queryGranularity": "MINUTE"
+  },
+  "dimensionsSpec": {
+    "dimensions": [
+      "appsysid",
+      "appid",
+      "service_type",
+      "status_code"
+    ]
+  },
+  "metricsSpec": [
+    {
+      "name": "count",
+      "type": "count"
+    },
+    {
+      "name": "dur_sum",
+      "fieldName": "dur",
+      "type": "doubleSum"
+    },
+    {
+      "name": "dur_min",
+      "fieldName": "dur",
+      "type": "doubleMin"
+    },
+    {
+      "name": "dur_max",
+      "fieldName": "dur",
+      "type": "doubleMax"
+    }
+  ],
+  "tuningConfig": {
+    "type": "index_parallel"
+  }
+}

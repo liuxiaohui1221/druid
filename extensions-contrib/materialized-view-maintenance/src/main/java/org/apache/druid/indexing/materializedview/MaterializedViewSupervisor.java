@@ -915,6 +915,19 @@ public class MaterializedViewSupervisor implements Supervisor
               if (runningTaskSets.size() >= maxTaskCount) {
                 return;
               }
+
+              //single interval segments end,if ds_mv segment granularity equal to ds_base segment granularity,then
+              // must be combine to one task,
+              // else if input segments combine to single complete ds_mv segment granularity,
+              // also create task
+              boolean isReached = spec.isReachMVSegmentGran(taskInputSegments,inputDataSegment);
+              if(isReached){
+                log.info("BaseDataSource[%s] segments[%s] reached mv granularity[%s],submit mv task!",
+                         spec.getBaseDataSource(),
+                         taskInputSegments.firstKey(), spec.granularitySpec.getSegmentGranularity());
+                lockedIntervals.addAll(createMaterializedViewTask(totalBatchSize, taskInputSegments, true,lockedIntervals));
+              }
+
               totalBatchSize.addAndGet(inputDataSegment.getSize());
               Pair<String, List<DataSegment>> versionSegments = taskInputSegments.computeIfAbsent(
                   baseIntervalChunk.getBaseInterval(),
@@ -922,7 +935,7 @@ public class MaterializedViewSupervisor implements Supervisor
               );
 
               if (totalBatchSize.get() > inputMaxSizeForAppendingTask) {
-                if (taskInputSegments.size() <= 1 && versionSegments.rhs.size() == 0) {
+                if (taskInputSegments.size() <= 1 && versionSegments.rhs.isEmpty()) {
                   versionSegments.rhs.add(inputDataSegment);
                   // 提交taskInputSegments，并clear
                   lockedIntervals.addAll(createMaterializedViewTask(totalBatchSize, taskInputSegments, true,lockedIntervals));
@@ -943,6 +956,7 @@ public class MaterializedViewSupervisor implements Supervisor
                 versionSegments.rhs.add(inputDataSegment);
               }
             }
+
           }
         }
       }
@@ -994,6 +1008,7 @@ public class MaterializedViewSupervisor implements Supervisor
         runningTasks.put(entry.getKey(), task);
         cacheIntervalTaskStartTimes.put(entry.getKey(), new AtomicLong(System.currentTimeMillis()));
       }
+      // clear input segments
       taskInputSegments.clear();
       totalBatchSize.set(0);
     } else {

@@ -252,7 +252,9 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
       }
       hitCount.get(datasourceName).incrementAndGet();
       costTime.get(datasourceName).addAndGet(System.currentTimeMillis() - start);
-      log.info("Push down queries[%s] from query[%s]", queries, query);
+      if (log.isDebugEnabled()) {
+        log.debug("Push down queries[%s] from query[%s]", queries, query);
+      }
       return queries;
     }
     finally {

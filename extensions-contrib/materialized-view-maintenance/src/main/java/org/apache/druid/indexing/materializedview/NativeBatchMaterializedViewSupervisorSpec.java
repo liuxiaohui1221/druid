@@ -58,12 +58,14 @@ import org.apache.druid.timeline.BaseShardSpecsSpec;
 import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.timeline.MaterializedSpec;
 import org.apache.druid.utils.CollectionUtils;
+import org.joda.time.DateTime;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
 
 public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewSupervisorSpec
 {
@@ -206,6 +208,23 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
     return tuningConfig.getPartitionsSpec().isForceGuaranteedRollupCompatibleType();
   }
 
+  @Override
+  public boolean isReachMVSegmentGran(SortedMap<Interval, Pair<String, List<DataSegment>>> sortedBaseIntervalSegments,
+                                      DataSegment curInputDataSegment
+  )
+  {
+    if(sortedBaseIntervalSegments.isEmpty()){
+      return false;
+    }
+    DataSegment baseFirstSeg = sortedBaseIntervalSegments.get(sortedBaseIntervalSegments.firstKey()).rhs.get(0);
+    Interval materializedInterval = getGranularitySpec().getSegmentGranularity()
+                                                        .bucket(baseFirstSeg.getId().getIntervalStart());
+    if (!materializedInterval.isEqual(curInputDataSegment.getInterval())) {
+      return true;
+    }
+    return false;
+  }
+
   private ParallelIndexTuningConfig setAppendingSubmitMode(boolean appendingMode)
   {
     //appending submit
@@ -310,7 +329,7 @@ public class NativeBatchMaterializedViewSupervisorSpec extends MaterializedViewS
   }
 
   @VisibleForTesting
-  byte compareSegmentGranType(List<DataSegment> segments)
+  public byte compareSegmentGranType(List<DataSegment> segments)
   {
     byte type = MaterializedSpec.TYPE_SAME_SEGMENT_GRAN;
     long beforeDuration = -1;
