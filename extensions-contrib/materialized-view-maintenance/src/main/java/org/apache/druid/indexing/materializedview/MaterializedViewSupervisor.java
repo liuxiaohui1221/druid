@@ -883,6 +883,7 @@ public class MaterializedViewSupervisor implements Supervisor
     List<CandidateGroup> candidateGroups = groupIntervalBySegmentGranularity(intervalItr);
     final SortedMap<Interval, Pair<String, List<DataSegment>>> taskInputSegments = new TreeMap<>(Comparators.intervalsByStartThenEnd()
                                                                                                             .reversed());
+    ArrayList<Interval> lockedIntervals = new ArrayList<>();
     for (CandidateGroup groupSortedToBuildVersion : candidateGroups) {
       try {
         if (spec.forceOverwrite() || groupSortedToBuildVersion.isOverwrite()) {
@@ -898,7 +899,7 @@ public class MaterializedViewSupervisor implements Supervisor
             versionSegments.rhs.addAll(baseSegments.get(baseIntervalChunk.getBaseInterval()));
           }
 
-          createMaterializedViewTask(new AtomicLong(), taskInputSegments, false);
+          lockedIntervals.addAll(createMaterializedViewTask(new AtomicLong(), taskInputSegments, false,lockedIntervals));
         } else {
           final AtomicLong totalBatchSize = new AtomicLong();
           // create appending task
@@ -924,10 +925,10 @@ public class MaterializedViewSupervisor implements Supervisor
                 if (taskInputSegments.size() <= 1 && versionSegments.rhs.size() == 0) {
                   versionSegments.rhs.add(inputDataSegment);
                   // 提交taskInputSegments，并clear
-                  createMaterializedViewTask(totalBatchSize, taskInputSegments, true);
+                  lockedIntervals.addAll(createMaterializedViewTask(totalBatchSize, taskInputSegments, true,lockedIntervals));
                 } else {
                   // 提交taskInputSegments，并clear
-                  createMaterializedViewTask(totalBatchSize, taskInputSegments, true);
+                  lockedIntervals.addAll(createMaterializedViewTask(totalBatchSize, taskInputSegments, true,lockedIntervals));
 
                   //new batch
                   versionSegments = taskInputSegments.computeIfAbsent(
@@ -955,21 +956,22 @@ public class MaterializedViewSupervisor implements Supervisor
     log.info("Submit materialized candidate input intervals[%s].",
              taskInputSegments.size());
     if (runningTaskSets.size() < maxTaskCount && taskInputSegments.size() > 0) {
-      createMaterializedViewTask(new AtomicLong(), taskInputSegments, true);
+      lockedIntervals.addAll(createMaterializedViewTask(new AtomicLong(), taskInputSegments, true,lockedIntervals));
     }
   }
 
-  private void createMaterializedViewTask(
+  private List<Interval> createMaterializedViewTask(
       AtomicLong totalBatchSize,
       Map<Interval, Pair<String, List<DataSegment>>> candidateTaskInputSegments,
-      boolean appendingToExists
+      boolean appendingToExists,
+      List<Interval> lockedIntervals
   )
   {
     Map<Interval, Pair<String, List<DataSegment>>> taskInputSegments=
-        filterLockedTaskInputSegments(candidateTaskInputSegments);
+        filterLockedTaskInputSegments(candidateTaskInputSegments,lockedIntervals);
     log.info("Before segments:%s, find unlocked segments:%s",candidateTaskInputSegments.size(),taskInputSegments.size());
     if (taskInputSegments.isEmpty()) {
-      return;
+      return Collections.emptyList();
     }
     Task task = spec.createTask(
         taskInputSegments.values().stream()
@@ -997,12 +999,19 @@ public class MaterializedViewSupervisor implements Supervisor
     } else {
       throw new IAE("TaskQueue is not present!");
     }
+    return new ArrayList<>(taskInputSegments.keySet());
   }
 
-  private Map<Interval, Pair<String, List<DataSegment>>> filterLockedTaskInputSegments(Map<Interval, Pair<String, List<DataSegment>>> taskInputSegments) {
+  private Map<Interval, Pair<String, List<DataSegment>>> filterLockedTaskInputSegments(Map<Interval, Pair<String,
+      List<DataSegment>>> taskInputSegments,List<Interval> beforeLockedIntervals) {
     Map<String,Integer> mvPriorityMap= new HashMap<>();
     mvPriorityMap.put(spec.getBaseDataSource(), Tasks.DEFAULT_BATCH_INDEX_TASK_PRIORITY);
+
     Map<String, List<Interval>> lockedIntervals = this.taskMaster.getLockedIntervals(mvPriorityMap);
+    Map<String, List<Interval>> beforeLockedIntervalMap = new HashMap<>();
+    beforeLockedIntervalMap.put(spec.getBaseDataSource(),beforeLockedIntervals);
+    lockedIntervals.putAll(beforeLockedIntervalMap);
+
     Map<Interval, Pair<String, List<DataSegment>>> filteredTaskInputSegments = new HashMap<>();
     for (Map.Entry<Interval, Pair<String, List<DataSegment>>> entry : taskInputSegments.entrySet()) {
       if (!lockedIntervals.containsKey(spec.getBaseDataSource())) {
