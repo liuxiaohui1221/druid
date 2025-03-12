@@ -100,7 +100,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
   @Override
   public List<Query> optimize(Query query)
   {
-    log.debug("MaterializedViewOptimizer optimize query start: %s", query);
+    log.info("MaterializedViewOptimizer optimize query start: %s", query);
     long start = System.currentTimeMillis();
     // only TableDataSource can be optimiezed
     if (!(query.getDataSource() instanceof TableDataSource)) {
@@ -252,9 +252,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
       }
       hitCount.get(datasourceName).incrementAndGet();
       costTime.get(datasourceName).addAndGet(System.currentTimeMillis() - start);
-      if (log.isDebugEnabled()) {
-        log.debug("Push down queries[%s] from query[%s]", queries, query);
-      }
+      log.info("Push down queries[%s] from query[%s]", queries, query);
       return queries;
     }
     finally {

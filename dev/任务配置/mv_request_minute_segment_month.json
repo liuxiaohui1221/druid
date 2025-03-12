@@ -1,11 +1,11 @@
 {
   "type": "materialized_view",
-  "baseDataSource": "ds_request",
-  "dataSource":"ds_request_minute_test_month",
+  "baseDataSource": "ds_request_minute",
+  "dataSource":"ds_request_minute_hour",
   "granularitySpec": {
     "type": "uniform",
-    "segmentGranularity": "MONTH",
-    "queryGranularity": "MINUTE"
+    "segmentGranularity": "hour",
+    "queryGranularity": "hour"
   },
   "dimensionsSpec": {
     "dimensions": [

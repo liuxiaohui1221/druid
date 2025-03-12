@@ -1,7 +1,7 @@
 {
   "type": "materialized_view",
-  "baseDataSource": "ds_request",
-  "dataSource":"ds_request_hour_test",
+  "baseDataSource": "mv_request_minute",
+  "dataSource":"mv_request_hour",
   "granularitySpec": {
     "type": "uniform",
     "segmentGranularity": "HOUR",
