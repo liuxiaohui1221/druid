@@ -26,17 +26,21 @@ import com.google.common.base.Strings;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 
 import java.util.Objects;
+import java.util.Set;
 
 
 public class DerivativeDataSourceMetadata implements DataSourceMetadata
 {
   private final String baseDataSource;
   private final ClientTaskGranularitySpec granularitySpec;
-
+  private final Set<String> dimensions;
+  private final Set<String> metrics;
   @JsonCreator
   public DerivativeDataSourceMetadata(
       @JsonProperty("baseDataSource") String baseDataSource,
-      @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec
+      @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec,
+      @JsonProperty("dimensions") Set<String> dimensions,
+      @JsonProperty("metrics") Set<String> metrics
   )
   {
     Preconditions.checkArgument(
@@ -48,6 +52,9 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
         "granularitySpec cannot be null. This is not a valid DerivativeDataSourceMetadata."
     );
     this.baseDataSource = baseDataSource;
+    this.dimensions = Preconditions.checkNotNull(dimensions, "dimensions cannot be null. This is not a valid DerivativeDataSourceMetadata.");
+    this.metrics = Preconditions.checkNotNull(metrics, "metrics cannot be null. This is not a valid DerivativeDataSourceMetadata.");
+
   }
 
   @JsonProperty("granularitySpec")
@@ -60,6 +67,17 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
   public String getBaseDataSource()
   {
     return baseDataSource;
+  }
+  @JsonProperty("dimensions")
+  public Set<String> getDimensions()
+  {
+    return dimensions;
+  }
+
+  @JsonProperty("metrics")
+  public Set<String> getMetrics()
+  {
+    return metrics;
   }
 
   @Override

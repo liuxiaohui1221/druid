@@ -28,23 +28,27 @@ import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Comparators;
 
 import java.util.Objects;
+import java.util.Set;
 
-public class DerivativeDataSource/* implements Comparable<DerivativeDataSource>*/
+public class DerivativeDataSource implements Comparable<DerivativeDataSource>
 {
   private final String dataSource;
   private final String baseDataSource;
   private final ClientTaskGranularitySpec granularitySpec;
+  private final Set<String> columns;
 
   @JsonCreator
   public DerivativeDataSource(
       @JsonProperty("dataSource") String dataSource,
       @JsonProperty("baseDataSource") String baseDataSource,
-      @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec
+      @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec,
+      @JsonProperty("columns") Set<String> columns
   )
   {
     this.dataSource = Preconditions.checkNotNull(dataSource, "dataSource");
     this.baseDataSource = Preconditions.checkNotNull(baseDataSource, "baseDataSource");
     this.granularitySpec = Preconditions.checkNotNull(granularitySpec, "granularitySpec");
+    this.columns = columns;
   }
 
   @VisibleForTesting
@@ -54,7 +58,7 @@ public class DerivativeDataSource/* implements Comparable<DerivativeDataSource>*
       Granularity segmentGranularity
   )
   {
-    this(dataSource, baseDataSource, new ClientTaskGranularitySpec(segmentGranularity, segmentGranularity, true));
+    this(dataSource, baseDataSource, new ClientTaskGranularitySpec(segmentGranularity, segmentGranularity, true),null);
   }
 
   @JsonCreator
@@ -75,7 +79,13 @@ public class DerivativeDataSource/* implements Comparable<DerivativeDataSource>*
     return granularitySpec;
   }
 
-  /*@Override
+  @JsonCreator
+  public Set<String> getColumns()
+  {
+    return columns;
+  }
+
+  @Override
   public int compareTo(DerivativeDataSource o)
   {
     int result = Comparators.granularityGreaterFirst()
@@ -100,7 +110,7 @@ public class DerivativeDataSource/* implements Comparable<DerivativeDataSource>*
     }
     return baseDataSource.compareTo(o.getBaseDataSource());
   }
-*/
+
   @Override
   public boolean equals(Object o)
   {

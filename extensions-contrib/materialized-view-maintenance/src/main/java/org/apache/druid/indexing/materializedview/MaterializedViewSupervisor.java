@@ -189,7 +189,9 @@ public class MaterializedViewSupervisor implements Supervisor
             dataSource,
             new DerivativeDataSourceMetadata(
                 spec.getBaseDataSource(),
-                spec.getGranularitySpec()
+                spec.getGranularitySpec(),
+                spec.getDimensions(),
+                spec.getMetrics()
             )
         );
       }
@@ -317,7 +319,9 @@ public class MaterializedViewSupervisor implements Supervisor
       commitDataSourceMetadata(
           new DerivativeDataSourceMetadata(
               spec.getBaseDataSource(),
-              spec.getGranularitySpec()
+              spec.getGranularitySpec(),
+              spec.getDimensions(),
+              spec.getMetrics()
           )
       );
     } else {

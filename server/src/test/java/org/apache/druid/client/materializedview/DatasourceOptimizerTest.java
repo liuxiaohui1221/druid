@@ -295,7 +295,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     // insert base datasource segments
@@ -470,7 +472,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.HOUR,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
      /*
@@ -784,7 +788,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     // insert base datasource segments
@@ -1016,7 +1022,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1024,7 +1032,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSourceDay, metadata2);
@@ -1258,7 +1268,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1266,7 +1278,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSourceDay, metadata2);
@@ -1495,7 +1509,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.HOUR,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1503,7 +1519,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     DerivativeDataSourceMetadata metadata3 = new DerivativeDataSourceMetadata(
         dataSourceDay,
@@ -1511,7 +1529,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     metadataStorageCoordinator.insertDataSourceMetadata(baseDataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata2);
@@ -1730,7 +1750,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.HOUR,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1738,7 +1760,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     DerivativeDataSourceMetadata metadata3 = new DerivativeDataSourceMetadata(
         dataSourceDay,
@@ -1746,7 +1770,9 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             Granularities.DAY,
             Granularities.MINUTE,
             true
-        )
+        ),
+        Collections.<String>emptySet(),
+        Collections.<String>emptySet()
     );
     metadataStorageCoordinator.insertDataSourceMetadata(baseDataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata2);

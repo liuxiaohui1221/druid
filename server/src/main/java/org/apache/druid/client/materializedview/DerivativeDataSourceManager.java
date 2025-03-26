@@ -21,12 +21,9 @@ package org.apache.druid.client.materializedview;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
+import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningScheduledExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -37,7 +34,6 @@ import org.apache.druid.indexing.overlord.DerivativeDataSource;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.concurrent.Execs;
-import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.jackson.JacksonUtils;
 import org.apache.druid.java.util.common.lifecycle.LifecycleStart;
@@ -48,10 +44,12 @@ import org.apache.druid.metadata.SQLMetadataConnector;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.TableDataSource;
 import org.joda.time.Duration;
+import org.joda.time.Interval;
 import org.skife.jdbi.v2.StatementContext;
 
 import java.sql.ResultSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,6 +58,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -167,7 +166,7 @@ public class DerivativeDataSourceManager
                                                                                                               new HashMap<>()
                                                                                                           ));
     if (!derivativeDataSources.containsKey(datasource)) {
-      return null;
+      return datasource;
     }
     String rootBaseDataSource = derivativeDataSources.get(datasource).getBaseDataSource();
     while (derivativeDataSources.containsKey(rootBaseDataSource)) {
@@ -248,10 +247,14 @@ public class DerivativeDataSourceManager
                                    "find derivatives: {bases=%s, derivative=%s, granularity=%s}",
                                    baseDataSource, dataSource, metadata.getGranularitySpec()
                                );
+                               Set<String> columns = new HashSet<>();
+                               columns.addAll(metadata.getDimensions());
+                               columns.addAll(metadata.getMetrics());
                                return new DerivativeDataSource(
                                    dataSource,
                                    baseDataSource,
-                                   metadata.getGranularitySpec()
+                                   metadata.getGranularitySpec(),
+                                   columns
                                );
                              })
                              .collect(Collectors.toList());
@@ -293,5 +296,29 @@ public class DerivativeDataSourceManager
       }
     }
     return groupDerivativeDataSources;
+  }
+
+  public SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(Query query) {
+    SortedSet<DerivativeDataSource> results = new TreeSet<>();
+    String datasourceName = ((TableDataSource) query.getDataSource()).getName();
+    String originBaseDataSource = this.getRootBaseDataSource(datasourceName);
+    List<Interval> queryIntervals = (List<Interval>) query.getIntervals();
+    // get all fields which the query required
+    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+
+    Set<DerivativeDataSource> allDerivatives = new HashSet<>();
+    getAllDerivatives().values().forEach(map->allDerivatives.addAll(map.values()));
+    Set<DerivativeDataSource> derivativesWithRequiredFields = new HashSet<>();
+    for (DerivativeDataSource derivativeDataSource : allDerivatives) {
+      if (derivativeDataSource.getColumns().containsAll(requiredFields)) {
+        derivativesWithRequiredFields.add(derivativeDataSource);
+      }
+    }
+    for(DerivativeDataSource derivativeDataSource:derivativesWithRequiredFields){
+      if(originBaseDataSource.equals(this.getRootBaseDataSource(derivativeDataSource.getDataSource()))){
+        results.add(derivativeDataSource);
+      }
+    }
+    return results;
   }
 }

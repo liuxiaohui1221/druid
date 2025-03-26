@@ -20,7 +20,6 @@
 package org.apache.druid.client.materializedview;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.MapDifference;
@@ -41,11 +40,16 @@ import org.apache.druid.query.JoinDataSource;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.TableDataSource;
+import org.apache.druid.query.groupby.GroupByQuery;
 import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
+import org.apache.druid.query.spec.MultipleIntervalSegmentSpec;
 import org.apache.druid.query.spec.MultipleSpecificSegmentSpec;
+import org.apache.druid.query.timeseries.TimeseriesQuery;
+import org.apache.druid.query.topn.TopNQuery;
 import org.apache.druid.segment.SegmentUtils;
 import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.timeline.TimelineLookup;
+import org.apache.druid.timeline.TimelineObjectHolder;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
@@ -60,6 +64,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -102,162 +107,213 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
   {
     log.info("MaterializedViewOptimizer optimize query start: %s", query);
     long start = System.currentTimeMillis();
+    // only topN/timeseries/groupby query can be optimized
     // only TableDataSource can be optimiezed
-    if (!(query.getDataSource() instanceof TableDataSource)) {
+    if (!(query instanceof TopNQuery || query instanceof TimeseriesQuery || query instanceof GroupByQuery)
+        || !(query.getDataSource() instanceof TableDataSource)) {
       return Collections.singletonList(query);
     }
     String datasourceName = ((TableDataSource) query.getDataSource()).getName();
-    // get all derivatives for datasource in query. The derivatives set is sorted by average size of
-    // per segment granularity.
-    ImmutableMap<String, DerivativeDataSource> subDerivatives = client.getSubDerivativeDataSources(datasourceName);
-    if (subDerivatives.isEmpty()) {
+
+    String originBaseDataSource = client.getRootBaseDataSource(datasourceName);
+    List<Interval> allQueryIntervals = (List<Interval>) query.getIntervals();
+
+    //选择满足聚合粒度和查询范围以及包含所需字段的最大粒度物化视图集：相同的时间分区随机选择一个物化视图，
+    // 不同的时间分区的物化视图都只需各自选择1个，并限制在时间范围条件内进行物化视图下推。
+    // get all fields which the query required
+//    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+    Map<String,List<Interval>> choosedTopDerivatives =
+        getMaximizeGranDerivatives(originBaseDataSource,allQueryIntervals,client.getCandidateSortedDerivatives(query));
+    if (choosedTopDerivatives.isEmpty()) {
       return Collections.singletonList(query);
     }
-    String originBaseDataSource = client.getRootBaseDataSource(datasourceName);
+    List<Query> queries = new ArrayList<>();
+
     lock.readLock().lock();
     try {
-      totalCount.computeIfAbsent(datasourceName, dsName -> new AtomicLong(0)).incrementAndGet();
-      hitCount.putIfAbsent(datasourceName, new AtomicLong(0));
-      costTime.computeIfAbsent(datasourceName, dsName -> new AtomicLong(0));
+      for (Map.Entry<String, List<Interval>> topEntry : choosedTopDerivatives.entrySet()) {
+          String topDatasourceName = topEntry.getKey();
+          List<Interval> topQueryIntervals = topEntry.getValue();
 
-      //todo 物化视图自定义字段与查询字段匹配
-      for (DerivativeDataSource derivativeDataSource : subDerivatives.values()) {
-        derivativesHitCount.putIfAbsent(derivativeDataSource.getDataSource(), new AtomicLong(0));
+          ImmutableMap<String, DerivativeDataSource> subDerivatives = client.getSubDerivativeDataSources(topDatasourceName);
+          if (subDerivatives.isEmpty()) {
+            //update query intervals to current topDataSourceName's corresponding to intervals.
+            queries.add(query.withQuerySegmentSpec(new MultipleIntervalSegmentSpec(topQueryIntervals)));
+          }
+
+          totalCount.computeIfAbsent(datasourceName, dsName -> new AtomicLong(0)).incrementAndGet();
+          hitCount.putIfAbsent(datasourceName, new AtomicLong(0));
+          costTime.computeIfAbsent(datasourceName, dsName -> new AtomicLong(0));
+
+
+          for (DerivativeDataSource derivativeDataSource : subDerivatives.values()) {
+            derivativesHitCount.putIfAbsent(derivativeDataSource.getDataSource(), new AtomicLong(0));
+          }
+          DerivativeDataSource queryDerivativeDataSource = subDerivatives.get(datasourceName);
+          query = unifyQueryGranularityIfNecessary(query, queryDerivativeDataSource);
+
+          Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> lastMaterializedSegmentsByInterval = null;
+          DerivativeDataSource lastDataSource = null;
+          //累积每层物化的interval,用于最底层物化视图获取完整被物化的原始segment集合，并用于在最原始数据源中进行过滤
+          Set<Interval> derivativeIntervals = new HashSet<>();
+          Map<String, Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>>> candidateDerivativeSegments = new HashMap<>();
+
+        Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> remainingTopQuerySegments = findSegments
+            (topQueryIntervals, originBaseDataSource, false);
+
+          //子物化视图依次从粒度从大到小遍历，不存在多层，则只有当前这个物化视图。
+          DerivativeDataSource curDerivativeDS = queryDerivativeDataSource;
+          while (curDerivativeDS != null) {
+            if (lastDataSource != null && !lastDataSource.getBaseDataSource()
+                                                         .equals(curDerivativeDS.getDataSource())) {
+              throw new IAE(
+                  "WTF? latest level baseDataSource[%s] do not equal to current dataSource[%s]",
+                  lastDataSource.getBaseDataSource(),
+                  curDerivativeDS.getDataSource()
+              );
+            }
+            //物化分区interval -> Pair<标识物化分区是否是物化视图任务产生，物化分区segments>
+            //interval级别过滤，直接通过对应的timeline过滤
+
+            Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> derivativeSegments = findSegments(
+                remainingTopQuerySegments.keySet(),
+                curDerivativeDS.getDataSource(),
+                false
+            );
+
+            //记录当前层与上层不一致version的segments,同时删除interval对应所属上层的整个粒度interval
+            if (lastMaterializedSegmentsByInterval != null) {
+              lastMaterializedSegmentsByInterval = filterLastAndPushDownDiffIntervals(
+                  lastMaterializedSegmentsByInterval,
+                  lastDataSource.getDataSource(),
+                  derivativeSegments,
+                  candidateDerivativeSegments
+              );
+            }
+
+            Set<Interval> missingIntervals = null;
+            //记录中间层物化视图缺失的interval,此interval范围不会继续下推
+            if (lastMaterializedSegmentsByInterval != null
+                && lastMaterializedSegmentsByInterval.size() != derivativeSegments.size()) {
+              // 上层记录的被物化的lastMaterializedSegmentsByInterval与当前实际存在的segment列表做对比，
+              // 不考虑版本变化的情况下，当记录的segment对应基数据源数据并不存在时，一种情况是基数据源过期规则小于上层数据源导致不一致，一种情况是人为删除基数据源对应segment.
+              // 当检测到记录存在，但实际不存在的interval，当做全部被物化，无需继续下推。
+              missingIntervals = findMissingIntervals(
+                  lastMaterializedSegmentsByInterval.keySet(),
+                  derivativeSegments.keySet()
+              );
+              //过滤缺失interval(假定过期导致缺失，过期前均被完全物化)：物化记录存在，但实际不存在的interval
+              remainingTopQuerySegments = filterOverlapMissingIntervals(remainingTopQuerySegments, missingIntervals);
+            }
+
+            // derivativeSegments可能包含当前层新产生的segment，或者历史interval，历史interval只查询当前层
+            // 也即历史hadoop产生的interval直接过滤，不参与下推（即过滤最原始数据源对应interval）
+            remainingTopQuerySegments = MaterializedViewUtils.minusHistoryInterval(
+                remainingTopQuerySegments,
+                derivativeSegments
+            );
+
+            //segment级别过滤得到当前层新增的segment，interval-->pair<是否为物化产生（false则为历史hadoop产生,兼容升级）,segments>
+            Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> newDerivativeSegments = filterLastMaterializedSegments(
+                derivativeSegments,
+                lastMaterializedSegmentsByInterval
+            );
+            //每层过滤缺失interval(假定过期导致缺失，过期前均被完全物化，缺失interval均不下推)：物化记录存在，但基数据源实际不存在的interval
+            if (missingIntervals != null) {
+              newDerivativeSegments = filterOverlapMissingIntervals(newDerivativeSegments, missingIntervals);
+            }
+
+            derivativeIntervals.addAll(newDerivativeSegments.keySet());
+
+            //查询当前物化视图被物化的segment（通过物化标识还原），作为下一层物化视图segment查询过滤条件。
+            lastMaterializedSegmentsByInterval = findSegments(
+                derivativeIntervals,
+                curDerivativeDS.getBaseDataSource(),
+                true
+            );
+
+            lastDataSource = curDerivativeDS;
+
+            //remainingQuerySegments中过滤掉当前物化视图已经物化的segments
+            //针对多层物化，只在最下一层物化视图进行最原始数据源的segment过滤（要求：大粒度的物化视图数据生命周期大于小粒度的物化视图或实时数据源的生命周期）
+            if (originBaseDataSource.equals(curDerivativeDS.getBaseDataSource())) {
+              //相同粒度下做差集：过滤所有上层被物化过的segment
+              remainingTopQuerySegments = MaterializedViewUtils.minusMV(
+                  remainingTopQuerySegments,
+                  lastMaterializedSegmentsByInterval
+              );
+
+            }
+            if (!newDerivativeSegments.isEmpty()) {
+              candidateDerivativeSegments.put(curDerivativeDS.getDataSource(), newDerivativeSegments);
+              derivativesHitCount.get(curDerivativeDS.getDataSource()).incrementAndGet();
+            }
+            if (remainingTopQuerySegments.isEmpty()) {
+              //最底层数据源没有剩余可下推的segment，无需继续下推，故跳出
+              break;
+            }
+            // next layer
+            curDerivativeDS = subDerivatives.get(curDerivativeDS.getBaseDataSource());
+          }
+
+          //物化视图查询
+          if (!candidateDerivativeSegments.isEmpty()) {
+            for (Map.Entry<String, Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>>> entry : candidateDerivativeSegments.entrySet()) {
+              queries.add(
+                  query.withDataSource(new TableDataSource(entry.getKey()))
+                       .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
+                           getQuerySegmentDescriptors(entry.getValue()), topQueryIntervals)));
+            }
+          }
+          //剩余的没有物化过的segmentId列表查询最原始数据源
+          if (!remainingTopQuerySegments.isEmpty()) {
+            queries.add(query.withDataSource(new TableDataSource(originBaseDataSource))
+                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
+                                 getQuerySegmentDescriptors
+                                     (remainingTopQuerySegments), topQueryIntervals)));
+          }
+          hitCount.get(datasourceName).incrementAndGet();
+          costTime.get(datasourceName).addAndGet(System.currentTimeMillis() - start);
       }
-      DerivativeDataSource queryDerivativeDataSource = subDerivatives.get(datasourceName);
-      query = unifyQueryGranularityIfNecessary(query, queryDerivativeDataSource);
-      List<Query> queries = new ArrayList<>();
-      List<Interval> queryIntervals = (List<Interval>) query.getIntervals();
-      Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> remainingQuerySegments = findSegments
-          (queryIntervals, originBaseDataSource, false);
 
-      Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> lastMaterializedSegmentsByInterval = null;
-      DerivativeDataSource lastDataSource = null;
-      //累积每层物化的interval,用于最底层物化视图获取完整被物化的原始segment集合，并用于在最原始数据源中进行过滤
-      Set<Interval> derivativeIntervals = new HashSet<>();
-
-      //baseDatasource由于全量覆盖任务导致的version变化，之前记录的物化标识失效
-      //记录每层物化视图version不一致的interval对应需要替换后的segments
-      Map<String, Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>>> candidateDerivativeSegments = new HashMap<>();
-
-      //子物化视图依次从粒度从大到小遍历，不存在多层，则只有当前这个物化视图。
-      DerivativeDataSource curDerivativeDS = queryDerivativeDataSource;
-      while (curDerivativeDS != null) {
-        if (lastDataSource != null && !lastDataSource.getBaseDataSource()
-                                                     .equals(curDerivativeDS.getDataSource())) {
-          throw new IAE(
-              "WTF? latest level baseDataSource[%s] do not equal to current dataSource[%s]",
-              lastDataSource.getBaseDataSource(),
-              curDerivativeDS.getDataSource()
-          );
-        }
-        //物化分区interval -> Pair<标识物化分区是否是物化视图任务产生，物化分区segments>
-        //interval级别过滤，直接通过对应的timeline过滤
-        Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> derivativeSegments = findSegments(
-            remainingQuerySegments.keySet(),
-            curDerivativeDS.getDataSource(),
-            false
-        );
-
-        //记录当前层与上层不一致version的segments,同时删除interval对应所属上层的整个粒度interval
-        if (lastMaterializedSegmentsByInterval != null) {
-          lastMaterializedSegmentsByInterval = filterLastAndPushDownDiffIntervals(
-              lastMaterializedSegmentsByInterval,
-              lastDataSource.getDataSource(),
-              derivativeSegments,
-              candidateDerivativeSegments
-          );
-        }
-
-        Set<Interval> missingIntervals = null;
-        //记录中间层物化视图缺失的interval,此interval范围不会继续下推
-        if (lastMaterializedSegmentsByInterval != null
-            && lastMaterializedSegmentsByInterval.size() != derivativeSegments.size()) {
-          // 上层记录的被物化的lastMaterializedSegmentsByInterval与当前实际存在的segment列表做对比，
-          // 不考虑版本变化的情况下，当记录的segment对应基数据源数据并不存在时，一种情况是基数据源过期规则小于上层数据源导致不一致，一种情况是人为删除基数据源对应segment.
-          // 当检测到记录存在，但实际不存在的interval，当做全部被物化，无需继续下推。
-          missingIntervals = findMissingIntervals(
-              lastMaterializedSegmentsByInterval.keySet(),
-              derivativeSegments.keySet()
-          );
-          //过滤缺失interval(假定过期导致缺失，过期前均被完全物化)：物化记录存在，但实际不存在的interval
-          remainingQuerySegments = filterOverlapMissingIntervals(remainingQuerySegments, missingIntervals);
-        }
-
-        // derivativeSegments可能包含当前层新产生的segment，或者历史interval，历史interval只查询当前层
-        // 也即历史hadoop产生的interval直接过滤，不参与下推（即过滤最原始数据源对应interval）
-        remainingQuerySegments = MaterializedViewUtils.minusHistoryInterval(
-            remainingQuerySegments,
-            derivativeSegments
-        );
-
-        //segment级别过滤得到当前层新增的segment，interval-->pair<是否为物化产生（false则为历史hadoop产生）,segments>
-        Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> newDerivativeSegments = filterLastMaterializedSegments(
-            derivativeSegments,
-            lastMaterializedSegmentsByInterval
-        );
-        //每层过滤缺失interval(假定过期导致缺失，过期前均被完全物化，缺失interval均不下推)：物化记录存在，但基数据源实际不存在的interval
-        if (missingIntervals != null) {
-          newDerivativeSegments = filterOverlapMissingIntervals(newDerivativeSegments, missingIntervals);
-        }
-
-        derivativeIntervals.addAll(newDerivativeSegments.keySet());
-
-        //查询当前物化视图被物化的segment（通过物化标识还原），作为下一层物化视图segment查询过滤条件。
-        lastMaterializedSegmentsByInterval = findSegments(
-            derivativeIntervals,
-            curDerivativeDS.getBaseDataSource(),
-            true
-        );
-
-        lastDataSource = curDerivativeDS;
-
-        //remainingQuerySegments中过滤掉当前物化视图已经物化的segments
-        //针对多层物化，只在最下一层物化视图进行最原始数据源的segment过滤（要求：大粒度的物化视图数据生命周期大于小粒度的物化视图或实时数据源的生命周期）
-        if (originBaseDataSource.equals(curDerivativeDS.getBaseDataSource())) {
-          //相同粒度下做差集：过滤所有上层被物化过的segment
-          remainingQuerySegments = MaterializedViewUtils.minusMV(
-              remainingQuerySegments,
-              lastMaterializedSegmentsByInterval
-          );
-
-        }
-        if (!newDerivativeSegments.isEmpty()) {
-          candidateDerivativeSegments.put(curDerivativeDS.getDataSource(), newDerivativeSegments);
-          derivativesHitCount.get(curDerivativeDS.getDataSource()).incrementAndGet();
-        }
-        if (remainingQuerySegments.isEmpty()) {
-          //最底层数据源没有剩余可下推的segment，无需继续下推，故跳出
-          break;
-        }
-        // next layer
-        curDerivativeDS = subDerivatives.get(curDerivativeDS.getBaseDataSource());
-      }
-
-      //物化视图查询
-      if (!candidateDerivativeSegments.isEmpty()) {
-        for (Map.Entry<String, Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>>> entry : candidateDerivativeSegments.entrySet()) {
-          queries.add(
-              query.withDataSource(new TableDataSource(entry.getKey()))
-                   .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
-                       getQuerySegmentDescriptors(entry.getValue()), queryIntervals)));
-        }
-      }
-      //剩余的没有物化过的segmentId列表查询最原始数据源
-      if (!remainingQuerySegments.isEmpty()) {
-        queries.add(query.withDataSource(new TableDataSource(originBaseDataSource))
-                         .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
-                             getQuerySegmentDescriptors
-                                 (remainingQuerySegments), queryIntervals)));
-      }
-      hitCount.get(datasourceName).incrementAndGet();
-      costTime.get(datasourceName).addAndGet(System.currentTimeMillis() - start);
       log.info("Push down queries[%s] from query[%s]", queries, query);
       return queries;
     }
     finally {
       lock.readLock().unlock();
     }
+  }
+
+  private Map<String, List<Interval>> getMaximizeGranDerivatives(
+      String originBaseDataSource, List<Interval> queryIntervals,
+      SortedSet<DerivativeDataSource> derivativesWithRequiredFields) {
+    Map<String, List<Interval>> result = new HashMap<>();
+    List<Interval> remainingQueryIntervals = new ArrayList<>(queryIntervals);
+    for (DerivativeDataSource derivativeDataSource : ImmutableSortedSet.copyOfSorted(derivativesWithRequiredFields)) {
+      final List<Interval> derivativeIntervals = remainingQueryIntervals.stream()
+                                                                        .flatMap(interval -> serverView
+                                                                            .getTimeline(JoinDataSource.forDataSource(new TableDataSource(derivativeDataSource.getDataSource())))
+                                                                            .orElseThrow(() -> new ISE(
+                                                                                "No timeline for dataSource: %s",
+                                                                                derivativeDataSource.getDataSource()
+                                                                            ))
+                                                                            .lookup(interval)
+                                                                            .stream()
+                                                                            .map(TimelineObjectHolder::getInterval)
+                                                                        )
+                                                                        .collect(Collectors.toList());
+      // if the derivative does not contain any parts of intervals in the query, the derivative will
+      // not be selected.
+      if (derivativeIntervals.isEmpty()) {
+        continue;
+      }
+      result.put(derivativeDataSource.getDataSource(), derivativeIntervals);
+      remainingQueryIntervals = MaterializedViewUtils.minus(remainingQueryIntervals, derivativeIntervals);
+    }
+    if (!remainingQueryIntervals.isEmpty()) {
+      result.put(originBaseDataSource, remainingQueryIntervals);
+    }
+    return result;
   }
 
   /**

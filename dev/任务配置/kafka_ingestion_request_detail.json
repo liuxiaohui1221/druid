@@ -21,9 +21,23 @@
       },
       "metricsSpec": [
         {
-          "name": "dur",
-          "fieldName": "dur",
-          "type": "doubleSum"
+          "type": "count",
+          "name": "count"
+        },
+        {
+          "type": "doubleSum",
+          "name": "dur_sum",
+          "fieldName": "dur"
+        },
+        {
+          "type": "doubleMin",
+          "name": "dur_min",
+          "fieldName": "dur"
+        },
+        {
+          "type": "doubleMax",
+          "name": "dur_max",
+          "fieldName": "dur"
         }
       ],
       "granularitySpec": {
