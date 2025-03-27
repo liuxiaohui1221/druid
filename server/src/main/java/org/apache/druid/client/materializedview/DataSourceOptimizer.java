@@ -26,6 +26,7 @@ import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.inject.Inject;
+import com.ibm.icu.impl.Assert;
 import org.apache.druid.client.TimelineServerView;
 import org.apache.druid.client.selector.ServerSelector;
 import org.apache.druid.common.guava.SettableSupplier;
@@ -42,7 +43,6 @@ import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.TableDataSource;
 import org.apache.druid.query.groupby.GroupByQuery;
 import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
-import org.apache.druid.query.spec.MultipleIntervalSegmentSpec;
 import org.apache.druid.query.spec.MultipleSpecificSegmentSpec;
 import org.apache.druid.query.timeseries.TimeseriesQuery;
 import org.apache.druid.query.topn.TopNQuery;
@@ -113,17 +113,18 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
         || !(query.getDataSource() instanceof TableDataSource)) {
       return Collections.singletonList(query);
     }
-    String datasourceName = ((TableDataSource) query.getDataSource()).getName();
+    String queryDatasourceName = ((TableDataSource) query.getDataSource()).getName();
 
-    String originBaseDataSource = client.getRootBaseDataSource(datasourceName);
-    List<Interval> allQueryIntervals = (List<Interval>) query.getIntervals();
+    String originBaseDataSource = client.getRootBaseDataSource(queryDatasourceName);
+    List<Interval> allQueryIntervals = new ArrayList<>(query.getIntervals());
 
     //选择满足聚合粒度和查询范围以及包含所需字段的最大粒度物化视图集：相同的时间分区随机选择一个物化视图，
     // 不同的时间分区的物化视图都只需各自选择1个，并限制在时间范围条件内进行物化视图下推。
     // get all fields which the query required
-//    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
     Map<String,List<Interval>> choosedTopDerivatives =
-        getMaximizeGranDerivatives(originBaseDataSource,allQueryIntervals,client.getCandidateSortedDerivatives(query));
+        getMaximizeGranDerivatives(originBaseDataSource,allQueryIntervals,
+                                   client.getCandidateSortedDerivatives(originBaseDataSource,requiredFields));
     if (choosedTopDerivatives.isEmpty()) {
       return Collections.singletonList(query);
     }
@@ -131,25 +132,41 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
 
     lock.readLock().lock();
     try {
+      //用于合并最终的查询集合
+      Map<String, List<SegmentDescriptor>> queryDsSegmentDescriptors = new HashMap<>();
+      Map<String, List<Interval>> queryDsIntervals = new HashMap<>();
+
       for (Map.Entry<String, List<Interval>> topEntry : choosedTopDerivatives.entrySet()) {
           String topDatasourceName = topEntry.getKey();
           List<Interval> topQueryIntervals = topEntry.getValue();
 
+          Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> remainingTopQuerySegments = findSegments
+            (topQueryIntervals, originBaseDataSource, false);
           ImmutableMap<String, DerivativeDataSource> subDerivatives = client.getSubDerivativeDataSources(topDatasourceName);
-          if (subDerivatives.isEmpty()) {
+          if (originBaseDataSource.equals(topDatasourceName)) {
             //update query intervals to current topDataSourceName's corresponding to intervals.
-            queries.add(query.withQuerySegmentSpec(new MultipleIntervalSegmentSpec(topQueryIntervals)));
+//            queries.add(query.withDataSource(new TableDataSource(originBaseDataSource))
+//                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
+//                                 getQuerySegmentDescriptors
+//                                     (remainingTopQuerySegments), topQueryIntervals)));
+            List<SegmentDescriptor> segmentDescriptors = queryDsSegmentDescriptors.computeIfAbsent(
+                originBaseDataSource, k -> new ArrayList<>()
+            );
+            segmentDescriptors.addAll(getQuerySegmentDescriptors(remainingTopQuerySegments));
+            List<Interval> intervals = queryDsIntervals.computeIfAbsent(originBaseDataSource, k -> new ArrayList<>());
+            intervals.addAll(topQueryIntervals);
+            continue;
           }
 
-          totalCount.computeIfAbsent(datasourceName, dsName -> new AtomicLong(0)).incrementAndGet();
-          hitCount.putIfAbsent(datasourceName, new AtomicLong(0));
-          costTime.computeIfAbsent(datasourceName, dsName -> new AtomicLong(0));
+          totalCount.computeIfAbsent(topDatasourceName, dsName -> new AtomicLong(0)).incrementAndGet();
+          hitCount.putIfAbsent(topDatasourceName, new AtomicLong(0));
+          costTime.computeIfAbsent(topDatasourceName, dsName -> new AtomicLong(0));
 
 
           for (DerivativeDataSource derivativeDataSource : subDerivatives.values()) {
             derivativesHitCount.putIfAbsent(derivativeDataSource.getDataSource(), new AtomicLong(0));
           }
-          DerivativeDataSource queryDerivativeDataSource = subDerivatives.get(datasourceName);
+          DerivativeDataSource queryDerivativeDataSource = subDerivatives.get(topDatasourceName);
           query = unifyQueryGranularityIfNecessary(query, queryDerivativeDataSource);
 
           Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> lastMaterializedSegmentsByInterval = null;
@@ -158,8 +175,6 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
           Set<Interval> derivativeIntervals = new HashSet<>();
           Map<String, Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>>> candidateDerivativeSegments = new HashMap<>();
 
-        Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> remainingTopQuerySegments = findSegments
-            (topQueryIntervals, originBaseDataSource, false);
 
           //子物化视图依次从粒度从大到小遍历，不存在多层，则只有当前这个物化视图。
           DerivativeDataSource curDerivativeDS = queryDerivativeDataSource;
@@ -259,24 +274,36 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
           //物化视图查询
           if (!candidateDerivativeSegments.isEmpty()) {
             for (Map.Entry<String, Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>>> entry : candidateDerivativeSegments.entrySet()) {
-              queries.add(
-                  query.withDataSource(new TableDataSource(entry.getKey()))
-                       .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
-                           getQuerySegmentDescriptors(entry.getValue()), topQueryIntervals)));
+//              queries.add(
+//                  query.withDataSource(new TableDataSource(entry.getKey()))
+//                       .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
+//                           getQuerySegmentDescriptors(entry.getValue()), topQueryIntervals)));
+              List<SegmentDescriptor> segmentDescriptors = queryDsSegmentDescriptors.computeIfAbsent(
+                  entry.getKey(), k -> new ArrayList<>()
+              );
+              segmentDescriptors.addAll(getQuerySegmentDescriptors(entry.getValue()));
+              List<Interval> intervals = queryDsIntervals.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
+              intervals.addAll(topQueryIntervals);
             }
           }
           //剩余的没有物化过的segmentId列表查询最原始数据源
           if (!remainingTopQuerySegments.isEmpty()) {
-            queries.add(query.withDataSource(new TableDataSource(originBaseDataSource))
-                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
-                                 getQuerySegmentDescriptors
-                                     (remainingTopQuerySegments), topQueryIntervals)));
+            List<SegmentDescriptor> segmentDescriptors = queryDsSegmentDescriptors.computeIfAbsent(
+                originBaseDataSource, k -> new ArrayList<>()
+            );
+            segmentDescriptors.addAll(getQuerySegmentDescriptors(remainingTopQuerySegments));
+            List<Interval> intervals = queryDsIntervals.computeIfAbsent(originBaseDataSource, k -> new ArrayList<>());
+            intervals.addAll(topQueryIntervals);
+//            queries.add(query.withDataSource(new TableDataSource(originBaseDataSource))
+//                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
+//                                 segmentDescriptors , topQueryIntervals)));
           }
-          hitCount.get(datasourceName).incrementAndGet();
-          costTime.get(datasourceName).addAndGet(System.currentTimeMillis() - start);
+          hitCount.get(topDatasourceName).incrementAndGet();
+          costTime.get(topDatasourceName).addAndGet(System.currentTimeMillis() - start);
       }
 
       log.info("Push down queries[%s] from query[%s]", queries, query);
+      queries=mergeQuerys(query,queryDsIntervals,queryDsSegmentDescriptors);
       return queries;
     }
     finally {
@@ -284,11 +311,24 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
     }
   }
 
+  private List<Query> mergeQuerys(Query query,
+                                  Map<String, List<Interval>> queryDsIntervals,
+                                  Map<String, List<SegmentDescriptor>> queryDsSegmentDescriptors
+  ) {
+    Assert.assrt(queryDsIntervals.size() == queryDsSegmentDescriptors.size());
+    List<Query> queries = new ArrayList<>();
+    for (Map.Entry<String,List<Interval>> entry:queryDsIntervals.entrySet()) {
+      queries.add(query.withDataSource(new TableDataSource(entry.getKey()))
+                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
+                                 queryDsSegmentDescriptors.get(entry.getKey()) , entry.getValue())));
+    }
+    return queries;
+  }
+
   private Map<String, List<Interval>> getMaximizeGranDerivatives(
-      String originBaseDataSource, List<Interval> queryIntervals,
+      String originBaseDataSource, List<Interval> remainingQueryIntervals,
       SortedSet<DerivativeDataSource> derivativesWithRequiredFields) {
     Map<String, List<Interval>> result = new HashMap<>();
-    List<Interval> remainingQueryIntervals = new ArrayList<>(queryIntervals);
     for (DerivativeDataSource derivativeDataSource : ImmutableSortedSet.copyOfSorted(derivativesWithRequiredFields)) {
       final List<Interval> derivativeIntervals = remainingQueryIntervals.stream()
                                                                         .flatMap(interval -> serverView

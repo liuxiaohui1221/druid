@@ -298,13 +298,8 @@ public class DerivativeDataSourceManager
     return groupDerivativeDataSources;
   }
 
-  public SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(Query query) {
+  public SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(String originBaseDataSource,Set<String> requiredFields) {
     SortedSet<DerivativeDataSource> results = new TreeSet<>();
-    String datasourceName = ((TableDataSource) query.getDataSource()).getName();
-    String originBaseDataSource = this.getRootBaseDataSource(datasourceName);
-    List<Interval> queryIntervals = (List<Interval>) query.getIntervals();
-    // get all fields which the query required
-    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
 
     Set<DerivativeDataSource> allDerivatives = new HashSet<>();
     getAllDerivatives().values().forEach(map->allDerivatives.addAll(map.values()));

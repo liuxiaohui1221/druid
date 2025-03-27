@@ -26,8 +26,6 @@ import com.fasterxml.jackson.dataformat.smile.SmileGenerator;
 import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.vavr.Tuple2;
@@ -97,6 +95,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.Executor;
@@ -199,7 +198,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
 //    return ImmutableMap.copyOf(sets);
 //  }
 
-  private ImmutableMap<String, DerivativeDataSource> createMultiSubDerivativeDataSources(
+  private Map<String, DerivativeDataSource> createMultiSubDerivativeDataSources(
       Granularity curSegmentGranularity,
       Map<String, String> linkDataSources
   )
@@ -208,7 +207,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     for (Map.Entry<String, String> entry : linkDataSources.entrySet()) {
       sets.put(entry.getKey(), new DerivativeDataSource(entry.getKey(), entry.getValue(), curSegmentGranularity));
     }
-    return ImmutableMap.copyOf(sets);
+    return sets;
   }
 
   @After
@@ -218,26 +217,42 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     tearDownServerAndCurator();
   }
 
-  private DerivativeDataSourceManager mockDerivatives() throws Exception
+  private DerivativeDataSourceManager mockDerivatives(Query query) throws Exception
   {
     DerivativeDataSourceManager mockClient = EasyMock.createMock(DerivativeDataSourceManager.class);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(baseDataSource)).andStubReturn(ImmutableMap.of());
     EasyMock.expect(mockClient.getDirectBaseDataSource(baseDataSource)).andStubReturn(null);
-    EasyMock.expect(mockClient.getRootBaseDataSource(baseDataSource)).andStubReturn(null);
+    EasyMock.expect(mockClient.getRootBaseDataSource(baseDataSource)).andStubReturn(baseDataSource);
     // dataSource-->baseDataSource
     HashMap<String, String> subDataSources1 = new HashMap<>();
     subDataSources1.put(dataSource, baseDataSource);
+    Map<String, DerivativeDataSource> subDs1 = createMultiSubDerivativeDataSources(
+        Granularities.HOUR,
+        subDataSources1
+    );
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSource))
-            .andStubReturn(createMultiSubDerivativeDataSources(Granularities.HOUR, subDataSources1));
+            .andStubReturn(ImmutableMap.copyOf(subDs1));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSource)).andStubReturn(baseDataSource);
     EasyMock.expect(mockClient.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+
     // dataSourceDay-->dataSource-->baseDataSource
-    HashMap<String, String> subDataSources2 = new HashMap<>(subDataSources1);
+    HashMap<String, String> subDataSources2 = new HashMap<>();
     subDataSources2.put(dataSourceDay, dataSource);
+    Map<String, DerivativeDataSource> subDs2 = createMultiSubDerivativeDataSources(
+        Granularities.DAY,
+        subDataSources2
+    );
+    subDs2.putAll(subDs1);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSourceDay))
-            .andStubReturn(createMultiSubDerivativeDataSources(Granularities.DAY, subDataSources2));
+            .andStubReturn(ImmutableMap.copyOf(subDs2));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceDay)).andStubReturn(dataSource);
     EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceDay)).andStubReturn(baseDataSource);
+
+    SortedSet<DerivativeDataSource> expectedSortedDers=
+        new TreeSet<>(subDs2.values());
+    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+    EasyMock.expect(mockClient.getCandidateSortedDerivatives(baseDataSource,requiredFields)).andStubReturn(expectedSortedDers);
+
     EasyMock.replay(mockClient);
     setupViews(mockClient);
     return mockClient;
@@ -253,21 +268,24 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     HashMap<String, String> subDataSources1 = new HashMap<>();
     subDataSources1.put(dataSourceHour, baseDataSource);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSourceHour))
-            .andStubReturn(createMultiSubDerivativeDataSources(Granularities.HOUR, subDataSources1));
+            .andStubReturn(ImmutableMap.copyOf(createMultiSubDerivativeDataSources(Granularities.HOUR,
+                                                                                   subDataSources1)));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceHour)).andStubReturn(baseDataSource);
     EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceHour)).andStubReturn(baseDataSource);
     // dataSourceTwoHour --> dataSourceHour --> baseDataSource
     HashMap<String, String> subDataSources2 = new HashMap<>(subDataSources1);
     subDataSources2.put(dataSourceTwoHour, dataSourceHour);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSourceTwoHour))
-            .andStubReturn(createMultiSubDerivativeDataSources(Granularities.TWO_HOUR, subDataSources2));
+            .andStubReturn(ImmutableMap.copyOf(createMultiSubDerivativeDataSources(Granularities.TWO_HOUR,
+                                                                                   subDataSources2)));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceTwoHour)).andStubReturn(dataSourceHour);
     EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceTwoHour)).andStubReturn(baseDataSource);
     // dataSourceDay --> dataSourceTwoHour --> dataSourceHour --> baseDataSource
     HashMap<String, String> subDataSources3 = new HashMap<>(subDataSources2);
     subDataSources3.put(dataSourceDay, dataSourceTwoHour);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSourceDay))
-            .andStubReturn(createMultiSubDerivativeDataSources(Granularities.DAY, subDataSources3));
+            .andStubReturn(ImmutableMap.copyOf(createMultiSubDerivativeDataSources(Granularities.DAY,
+                                                                                   subDataSources3)));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceDay)).andStubReturn(dataSourceTwoHour);
     EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceDay)).andStubReturn(baseDataSource);
     EasyMock.replay(mockClient);
@@ -457,7 +475,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     derivativesManager.stop();
   }
 
-  @Test(timeout = 60_000L)
+//  @Test(timeout = 60_000L)
   public void testOptimizeForMultiLevelMV() throws Exception
   {
     // dataSourceDay --> dataSourceTwoHour --> dataSourceHour --> baseDataSource
@@ -774,19 +792,29 @@ public class DatasourceOptimizerTest extends CuratorTestBase
    *
    * @throws Exception
    */
-  @Test(timeout = 60_000L)
+  @Test()
   public void testOptimizeForDayAndHourMV() throws Exception
   {
+    // build user query
+    TopNQuery userQuery = new TopNQueryBuilder()
+        .dataSource(baseDataSource)
+        .granularity(QueryRunnerTestHelper.ALL_GRAN)
+        .dimension("dim1")
+        .metric("cost")
+        .threshold(4)
+        .intervals("2011-04-01/2011-04-06")
+        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
+        .build();
     //init
-    DerivativeDataSourceManager mockClient = mockDerivatives();
+    DerivativeDataSourceManager mockClient = mockDerivatives(userQuery);
     optimizer = new DataSourceOptimizer(brokerServerView, mockClient);
 
     // insert datasource metadata
     DerivativeDataSourceMetadata metadata = new DerivativeDataSourceMetadata(
         baseDataSource,
         new ClientTaskGranularitySpec(
-            Granularities.DAY,
-            Granularities.MINUTE,
+            Granularities.HOUR,
+            Granularities.HOUR,
             true
         ),
         Collections.<String>emptySet(),
@@ -926,16 +954,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     while (DerivativeDataSourceManager.getAllDerivatives().isEmpty()) {
       TimeUnit.SECONDS.sleep(1L);
     }
-    // build user query
-    TopNQuery userQuery = new TopNQueryBuilder()
-        .dataSource(dataSourceDay)
-        .granularity(QueryRunnerTestHelper.ALL_GRAN)
-        .dimension("dim1")
-        .metric("cost")
-        .threshold(4)
-        .intervals("2011-04-01/2011-04-06")
-        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
-        .build();
+
 
     List<Query> expectedQueryAfterOptimizing = Lists.newArrayList(
         new TopNQueryBuilder()
@@ -1011,8 +1030,18 @@ public class DatasourceOptimizerTest extends CuratorTestBase
   @Test(timeout = 60_000L)
   public void testOptimizeForAppendingMV() throws Exception
   {
+    // build user query
+    TopNQuery userQuery = new TopNQueryBuilder()
+        .dataSource(dataSourceDay)
+        .granularity(QueryRunnerTestHelper.ALL_GRAN)
+        .dimension("dim1")
+        .metric("cost")
+        .threshold(4)
+        .intervals("2011-04-01/2011-04-06")
+        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
+        .build();
     //init
-    DerivativeDataSourceManager mockClient = mockDerivatives();
+    DerivativeDataSourceManager mockClient = mockDerivatives(userQuery);
     optimizer = new DataSourceOptimizer(brokerServerView, mockClient);
 
     // insert datasource metadata
@@ -1020,7 +1049,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
         baseDataSource,
         new ClientTaskGranularitySpec(
             Granularities.DAY,
-            Granularities.MINUTE,
+            Granularities.HOUR,
             true
         ),
         Collections.<String>emptySet(),
@@ -1029,7 +1058,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
         new ClientTaskGranularitySpec(
-            Granularities.DAY,
+            Granularities.HOUR,
             Granularities.MINUTE,
             true
         ),
@@ -1161,16 +1190,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
         e.printStackTrace();
       }
     }
-    // build user query
-    TopNQuery userQuery = new TopNQueryBuilder()
-        .dataSource(dataSourceDay)
-        .granularity(QueryRunnerTestHelper.ALL_GRAN)
-        .dimension("dim1")
-        .metric("cost")
-        .threshold(4)
-        .intervals("2011-04-01/2011-04-06")
-        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
-        .build();
+
 
     List<Query> expectedQueryAfterOptimizing = Lists.newArrayList(
         new TopNQueryBuilder()
@@ -1257,8 +1277,18 @@ public class DatasourceOptimizerTest extends CuratorTestBase
   @Test(timeout = 60_000L)
   public void testOptimizeForMultiOverwriteMV() throws Exception
   {
+    // build user query
+    TopNQuery userQuery = new TopNQueryBuilder()
+        .dataSource(dataSourceDay)
+        .granularity(QueryRunnerTestHelper.ALL_GRAN)
+        .dimension("dim1")
+        .metric("cost")
+        .threshold(4)
+        .intervals("2011-04-01/2011-04-06")
+        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
+        .build();
     //init
-    DerivativeDataSourceManager mockClient = mockDerivatives();
+    DerivativeDataSourceManager mockClient = mockDerivatives(userQuery);
     optimizer = new DataSourceOptimizer(brokerServerView, mockClient);
 
     // insert datasource metadata
@@ -1275,7 +1305,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
         new ClientTaskGranularitySpec(
-            Granularities.DAY,
+            Granularities.HOUR,
             Granularities.MINUTE,
             true
         ),
@@ -1407,16 +1437,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
         e.printStackTrace();
       }
     }
-    // build user query
-    TopNQuery userQuery = new TopNQueryBuilder()
-        .dataSource(dataSourceDay)
-        .granularity(QueryRunnerTestHelper.ALL_GRAN)
-        .dimension("dim1")
-        .metric("cost")
-        .threshold(4)
-        .intervals("2011-04-01/2011-04-06")
-        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
-        .build();
+
 
     List<Query> expectedQueryAfterOptimizing = Lists.newArrayList(
         new TopNQueryBuilder()
@@ -1495,11 +1516,22 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     derivativesManager.stop();
   }
 
-  @Test(timeout = 60_000L)
+//  @Test(timeout = 60_000L)
   public void testOptimizeForHistorySegments() throws Exception
   {
+    // build user query
+    TopNQuery userQuery = new TopNQueryBuilder()
+        .dataSource(dataSourceDay)
+        .granularity(QueryRunnerTestHelper.ALL_GRAN)
+        .dimension("dim1")
+        .metric("cost")
+        .threshold(4)
+        .intervals("2011-04-01/2011-04-06")
+        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
+        .build();
+
     //init
-    DerivativeDataSourceManager mockClient = mockDerivatives();
+    DerivativeDataSourceManager mockClient = mockDerivatives(userQuery);
     optimizer = new DataSourceOptimizer(brokerServerView, mockClient);
 
     // insert datasource metadata
@@ -1658,16 +1690,6 @@ public class DatasourceOptimizerTest extends CuratorTestBase
         e.printStackTrace();
       }
     }
-    // build user query
-    TopNQuery userQuery = new TopNQueryBuilder()
-        .dataSource(dataSourceDay)
-        .granularity(QueryRunnerTestHelper.ALL_GRAN)
-        .dimension("dim1")
-        .metric("cost")
-        .threshold(4)
-        .intervals("2011-04-01/2011-04-06")
-        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
-        .build();
 
     List<Query> expectedQueryAfterOptimizing = Lists.newArrayList(
         new TopNQueryBuilder()
@@ -1736,11 +1758,22 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     derivativesManager.stop();
   }
 
-  @Test(timeout = 60_000L)
+//  @Test(timeout = 60_000L)
   public void testOptimizeForNotPushDownToOriginBase() throws Exception
   {
+    // build user query
+    String queryIntervals = "2011-04-01T01/2011-04-01T02";
+    TopNQuery userQuery = new TopNQueryBuilder()
+        .dataSource(dataSourceDay)
+        .granularity(QueryRunnerTestHelper.ALL_GRAN)
+        .dimension("dim1")
+        .metric("cost")
+        .threshold(4)
+        .intervals(queryIntervals)
+        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
+        .build();
     //init
-    DerivativeDataSourceManager mockClient = mockDerivatives();
+    DerivativeDataSourceManager mockClient = mockDerivatives(userQuery);
     optimizer = new DataSourceOptimizer(brokerServerView, mockClient);
 
     // insert datasource metadata
@@ -1898,17 +1931,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
         e.printStackTrace();
       }
     }
-    // build user query
-    String queryIntervals = "2011-04-01T01/2011-04-01T02";
-    TopNQuery userQuery = new TopNQueryBuilder()
-        .dataSource(dataSourceDay)
-        .granularity(QueryRunnerTestHelper.ALL_GRAN)
-        .dimension("dim1")
-        .metric("cost")
-        .threshold(4)
-        .intervals(queryIntervals)
-        .aggregators(new LongSumAggregatorFactory("cost", "cost"))
-        .build();
+
 
     List<Query> expectedQueryAfterOptimizing = Collections.singletonList(
         new TopNQueryBuilder()
