@@ -19,12 +19,14 @@
 
 package org.apache.druid.segment.realtime.appenderator;
 
+import org.apache.druid.indexer.partitions.PartitionsSpec;
 import org.apache.druid.segment.indexing.TuningConfig;
 import org.apache.druid.segment.writeout.SegmentWriteOutMediumFactory;
 import org.joda.time.Period;
 
 import javax.annotation.Nullable;
 import java.io.File;
+
 
 public interface AppenderatorConfig extends TuningConfig
 {
@@ -48,7 +50,7 @@ public interface AppenderatorConfig extends TuningConfig
   @Nullable
   default Integer getMaxRowsPerSegment()
   {
-    return Integer.MAX_VALUE;
+    return PartitionsSpec.DEFAULT_MAX_ROWS_PER_SEGMENT;
   }
 
   /**

@@ -148,9 +148,14 @@ public class QueryResource implements QueryCountStatsProvider
     }
     boolean materializedViewQuery = DerivativeDataSourceManager.isMaterializedViewQuery(baseQuery);
     if (!materializedViewQuery) {
+      log.info("Materialized view query detected, converting to MaterializedViewQuery:[%s],node:%s",
+               baseQuery.getDataSource(),selfNode.getServiceName());
+//      if(selfNode.getServiceName().equalsIgnoreCase("druid/middleManager")){
+//        return new MaterializedViewQuery.Builder().query((BaseQuery) baseQuery).optimizer(mvOptimizer).build();
+//      }
       return baseQuery;
     }
-    log.debug("Materialized view query detected, converting to MaterializedViewQuery:[%s]",baseQuery.getDataSource());
+    log.info("Materialized view query detected, converting to MaterializedViewQuery:[%s]",baseQuery.getDataSource());
     return new MaterializedViewQuery.Builder().query((BaseQuery) baseQuery).optimizer(mvOptimizer).build();
   }
 

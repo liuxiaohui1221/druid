@@ -1,0 +1,34 @@
+{
+  "queryType": "groupBy",
+  "dataSource": "request",  // 替换为你的数据源名称
+  "granularity": "all",
+  "intervals": ["2020-01-01T00:00:00/2024-01-01T00:00:00"],  // 扩大时间范围增加计算量
+  "dimensions": [
+    "pappid",
+    "appid",
+    { "type": "default", "dimension": "path", "outputName": "request_path" },
+    "method",
+    "status_code"
+  ],
+  "aggregations": [
+    { "type": "longSum", "name": "total_dur", "fieldName": "dur_sum" },
+    { "type": "doubleSum", "name": "avg_dur", "fieldName": "dur_sum" },
+    { "type": "count", "name": "request_count" },
+    { "type": "hyperUnique", "name": "unique_paths", "fieldName": "path" }  // 高基数去重计算
+  ],
+  "postAggregations": [
+    { "type": "arithmetic",
+      "name": "avg_dur_calculated",
+      "fn": "/",
+      "fields": [
+        { "type": "fieldAccess", "fieldName": "avg_dur" },
+        { "type": "fieldAccess", "fieldName": "request_count" }
+      ]
+    }
+  ],
+  "context": {
+    "groupByStrategy": "v2",  // 强制使用较慢的 V2 引擎
+    "maxScatterGatherBytes": 1073741824,  // 允许更大数据传输
+    "timeout": 60000  // 避免超时
+  }
+}

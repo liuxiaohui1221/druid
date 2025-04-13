@@ -1,0 +1,31 @@
+{
+  "queryType": "groupBy",
+  "dataSource": "dwm_request_src",
+  "granularity": "hour",
+  "dimensions": [
+    "pappid",
+    "appid",
+    { "type": "default", "dimension": "path", "outputName": "request_path" },
+    "method",
+    "status_code"
+  ],
+  "aggregations": [
+    {
+      "type": "doubleSum",
+      "name": "dur_max",
+      "fieldName": "dur_max"
+    },{
+      "type": "doubleSum",
+      "name": "dur_sum",
+      "fieldName": "dur_sum"
+    }
+  ],
+  "intervals": [
+    "2019-01-11T09/2019-02-16T10"
+  ],
+  "context": {
+    "groupByStrategy": "v2",  // 强制使用较慢的 V2 引擎
+    "maxScatterGatherBytes": 1073741824,  // 允许更大数据传输
+    "timeout": 60000  // 避免超时
+  }
+}

@@ -1,0 +1,336 @@
+{
+  "type": "kafka",
+  "spec": {
+    "dataSchema": {
+      "dataSource": "dwm_request_hour_basets",
+      "timestampSpec": {
+        "column": "ts",
+        "format": "auto",
+        "missingValue": null
+      },
+      "dimensionsSpec": {
+        "dimensions": [
+        ],
+        "dimensionExclusions": [
+          "dur",
+          "exception",
+          "err_5xx_min",
+          "frustrated",
+          "dur_sum",
+          "httperr_max",
+          "err_5xx_sum",
+          "err_4xx",
+          "biz_max",
+          "fail_min",
+          "frustrated_max",
+          "exception_min",
+          "biz",
+          "biz_min",
+          "frustrated_sum",
+          "exception_max",
+          "frustrated_min",
+          "dur_min",
+          "__time",
+          "err_sum",
+          "err_4xx_min",
+          "count",
+          "err_min",
+          "neterr_max",
+          "biz_sum",
+          "dur_max",
+          "err_4xx_sum",
+          "fail",
+          "err_4xx_max",
+          "exception_sum",
+          "tolerated",
+          "err_5xx",
+          "httperr",
+          "neterr",
+          "neterr_sum",
+          "err_max",
+          "neterr_min",
+          "tolerated_sum",
+          "value",
+          "timestamp",
+          "tolerated_min",
+          "err",
+          "fail_sum",
+          "httperr_sum",
+          "err_5xx_max",
+          "tolerated_max",
+          "httperr_min",
+          "fail_max",
+          "ts"
+        ],
+        "includeAllDimensions": false,
+        "useSchemaDiscovery": false
+      },
+      "metricsSpec": [
+        {
+          "type": "count",
+          "name": "count"
+        },
+        {
+          "type": "longSum",
+          "name": "dur_sum",
+          "fieldName": "dur"
+        },
+        {
+          "type": "longMin",
+          "name": "dur_min",
+          "fieldName": "dur"
+        },
+        {
+          "type": "longMax",
+          "name": "dur_max",
+          "fieldName": "dur"
+        },
+        {
+          "type": "longSum",
+          "name": "biz_sum",
+          "fieldName": "biz"
+        },
+        {
+          "type": "longMin",
+          "name": "biz_min",
+          "fieldName": "biz"
+        },
+        {
+          "type": "longMax",
+          "name": "biz_max",
+          "fieldName": "biz"
+        },
+        {
+          "type": "longSum",
+          "name": "fail_sum",
+          "fieldName": "fail"
+        },
+        {
+          "type": "longMin",
+          "name": "fail_min",
+          "fieldName": "fail"
+        },
+        {
+          "type": "longMax",
+          "name": "fail_max",
+          "fieldName": "fail"
+        },
+        {
+          "type": "longSum",
+          "name": "httperr_sum",
+          "fieldName": "httperr"
+        },
+        {
+          "type": "longMin",
+          "name": "httperr_min",
+          "fieldName": "httperr"
+        },
+        {
+          "type": "longMax",
+          "name": "httperr_max",
+          "fieldName": "httperr"
+        },
+        {
+          "type": "longSum",
+          "name": "neterr_sum",
+          "fieldName": "neterr"
+        },
+        {
+          "type": "longMin",
+          "name": "neterr_min",
+          "fieldName": "neterr"
+        },
+        {
+          "type": "longMax",
+          "name": "neterr_max",
+          "fieldName": "neterr"
+        },
+        {
+          "type": "longSum",
+          "name": "err_sum",
+          "fieldName": "err"
+        },
+        {
+          "type": "longMin",
+          "name": "err_min",
+          "fieldName": "err"
+        },
+        {
+          "type": "longMax",
+          "name": "err_max",
+          "fieldName": "err"
+        },
+        {
+          "type": "longSum",
+          "name": "tolerated_sum",
+          "fieldName": "tolerated"
+        },
+        {
+          "type": "longMin",
+          "name": "tolerated_min",
+          "fieldName": "tolerated"
+        },
+        {
+          "type": "longMax",
+          "name": "tolerated_max",
+          "fieldName": "tolerated"
+        },
+        {
+          "type": "longSum",
+          "name": "frustrated_sum",
+          "fieldName": "frustrated"
+        },
+        {
+          "type": "longMin",
+          "name": "frustrated_min",
+          "fieldName": "frustrated"
+        },
+        {
+          "type": "longMax",
+          "name": "frustrated_max",
+          "fieldName": "frustrated"
+        },
+        {
+          "type": "longSum",
+          "name": "exception_sum",
+          "fieldName": "exception"
+        },
+        {
+          "type": "longMin",
+          "name": "exception_min",
+          "fieldName": "exception"
+        },
+        {
+          "type": "longMax",
+          "name": "exception_max",
+          "fieldName": "exception"
+        },
+        {
+          "type": "longSum",
+          "name": "err_4xx_sum",
+          "fieldName": "err_4xx"
+        },
+        {
+          "type": "longMin",
+          "name": "err_4xx_min",
+          "fieldName": "err_4xx"
+        },
+        {
+          "type": "longMax",
+          "name": "err_4xx_max",
+          "fieldName": "err_4xx"
+        },
+        {
+          "type": "longSum",
+          "name": "err_5xx_sum",
+          "fieldName": "err_5xx"
+        },
+        {
+          "type": "longMin",
+          "name": "err_5xx_min",
+          "fieldName": "err_5xx"
+        },
+        {
+          "type": "longMax",
+          "name": "err_5xx_max",
+          "fieldName": "err_5xx"
+        }
+      ],
+      "granularitySpec": {
+        "type": "uniform",
+        "segmentGranularity": "HOUR",
+        "queryGranularity": "HOUR",
+        "rollup": true,
+        "intervals": []
+      },
+      "transformSpec": {
+        "filter": null,
+        "transforms": []
+      }
+    },
+    "ioConfig": {
+      "topic": "dwm_request",
+      "topicPattern": null,
+      "inputFormat": {
+        "type": "json",
+        "keepNullColumns": false,
+        "assumeNewlineDelimited": false,
+        "useJsonNodeReader": false
+      },
+      "replicas": 1,
+      "taskCount": 1,
+      "taskDuration": "PT3600S",
+      "consumerProperties": {
+        "bootstrap.servers": "localhost:9092"
+      },
+      "autoScalerConfig": null,
+      "pollTimeout": 100,
+      "startDelay": "PT5S",
+      "period": "PT30S",
+      "useEarliestOffset": false,
+      "completionTimeout": "PT1800S",
+      "lateMessageRejectionPeriod": null,
+      "earlyMessageRejectionPeriod": null,
+      "lateMessageRejectionStartDateTime": null,
+      "configOverrides": null,
+      "idleConfig": null,
+      "stopTaskCount": null,
+      "stream": "dwm_request",
+      "useEarliestSequenceNumber": false,
+      "type": "kafka"
+    },
+    "tuningConfig": {
+      "type": "kafka",
+      "appendableIndexSpec": {
+        "type": "onheap",
+        "preserveExistingMetrics": false
+      },
+      "maxRowsInMemory": 150000,
+      "maxBytesInMemory": 0,
+      "skipBytesInMemoryOverheadCheck": false,
+      "maxRowsPerSegment": 5000000,
+      "maxTotalRows": null,
+      "intermediatePersistPeriod": "PT10M",
+      "maxPendingPersists": 0,
+      "indexSpec": {
+        "bitmap": {
+          "type": "roaring"
+        },
+        "dimensionCompression": "lz4",
+        "stringDictionaryEncoding": {
+          "type": "utf8"
+        },
+        "metricCompression": "lz4",
+        "longEncoding": "longs"
+      },
+      "indexSpecForIntermediatePersists": {
+        "bitmap": {
+          "type": "roaring"
+        },
+        "dimensionCompression": "lz4",
+        "stringDictionaryEncoding": {
+          "type": "utf8"
+        },
+        "metricCompression": "lz4",
+        "longEncoding": "longs"
+      },
+      "reportParseExceptions": false,
+      "handoffConditionTimeout": 900000,
+      "resetOffsetAutomatically": false,
+      "segmentWriteOutMediumFactory": null,
+      "workerThreads": null,
+      "chatRetries": 8,
+      "httpTimeout": "PT10S",
+      "shutdownTimeout": "PT80S",
+      "offsetFetchPeriod": "PT30S",
+      "intermediateHandoffPeriod": "P2147483647D",
+      "logParseExceptions": false,
+      "maxParseExceptions": 2147483647,
+      "maxSavedParseExceptions": 0,
+      "numPersistThreads": 1,
+      "skipSequenceNumberAvailabilityCheck": false,
+      "repartitionTransitionDuration": "PT120S"
+    }
+  },
+  "context": null
+}

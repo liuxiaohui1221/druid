@@ -23,7 +23,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningScheduledExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -31,6 +30,7 @@ import com.google.inject.Inject;
 import org.apache.druid.guice.ManageLifecycle;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.DerivativeDataSource;
+import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.concurrent.Execs;
@@ -44,7 +44,6 @@ import org.apache.druid.metadata.SQLMetadataConnector;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.TableDataSource;
 import org.joda.time.Duration;
-import org.joda.time.Interval;
 import org.skife.jdbi.v2.StatementContext;
 
 import java.sql.ResultSet;
@@ -58,7 +57,6 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -188,7 +186,8 @@ public class DerivativeDataSourceManager
     if (!stringDerivativeDataSourceImmutableMap.containsKey(datasource)) {
       log.error("WTF? current derivative[%s]'s sub derivative dataSources need sorted by granularity desc and need "
                 + "contains itself.", datasource);
-      return null;
+      throw new ISE("WTF? current derivative[%s]'s sub derivative dataSources need sorted by granularity desc and "
+                    + "need ", datasource);
     }
     return stringDerivativeDataSourceImmutableMap.get(datasource).getBaseDataSource();
   }
@@ -205,8 +204,11 @@ public class DerivativeDataSourceManager
     }
     String datasourceName = ((TableDataSource) query.getDataSource()).getName();
     if (DERIVATIVES_REF.get().containsKey(datasourceName)) {
+      log.info("current datasource[%s] is materialized view.", datasourceName);
       return true;
     }
+    log.info("current datasource[%s] is not materialized view. derivatives size[%s]", datasourceName,
+             DERIVATIVES_REF.get().size());
     return false;
   }
 
@@ -298,14 +300,16 @@ public class DerivativeDataSourceManager
     return groupDerivativeDataSources;
   }
 
-  public SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(String originBaseDataSource,Set<String> requiredFields) {
+  public SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(String originBaseDataSource, Set<String> requiredFields,
+                                                                       Granularity queryGranularity
+  ) {
     SortedSet<DerivativeDataSource> results = new TreeSet<>();
 
     Set<DerivativeDataSource> allDerivatives = new HashSet<>();
     getAllDerivatives().values().forEach(map->allDerivatives.addAll(map.values()));
     Set<DerivativeDataSource> derivativesWithRequiredFields = new HashSet<>();
     for (DerivativeDataSource derivativeDataSource : allDerivatives) {
-      if (derivativeDataSource.getColumns().containsAll(requiredFields)) {
+      if (derivativeDataSource.getColumns().containsAll(requiredFields) && derivativeDataSource.getGranularitySpec().getQueryGranularity().isFinerThan(queryGranularity)) {
         derivativesWithRequiredFields.add(derivativeDataSource);
       }
     }

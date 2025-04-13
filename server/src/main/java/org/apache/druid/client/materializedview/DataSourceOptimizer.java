@@ -105,7 +105,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
   @Override
   public List<Query> optimize(Query query)
   {
-    log.info("MaterializedViewOptimizer optimize query start: %s", query);
+    log.info("Optimize query start: %s", query.getDataSource());
     long start = System.currentTimeMillis();
     // only topN/timeseries/groupby query can be optimized
     // only TableDataSource can be optimiezed
@@ -124,7 +124,8 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
     Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
     Map<String,List<Interval>> choosedTopDerivatives =
         getMaximizeGranDerivatives(originBaseDataSource,allQueryIntervals,
-                                   client.getCandidateSortedDerivatives(originBaseDataSource,requiredFields));
+                                   client.getCandidateSortedDerivatives(originBaseDataSource,requiredFields,
+                                                                        query.getGranularity()));
     if (choosedTopDerivatives.isEmpty()) {
       return Collections.singletonList(query);
     }
@@ -302,8 +303,9 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
           costTime.get(topDatasourceName).addAndGet(System.currentTimeMillis() - start);
       }
 
-      log.info("Push down queries[%s] from query[%s]", queries, query);
       queries=mergeQuerys(query,queryDsIntervals,queryDsSegmentDescriptors);
+      log.info("Push down queries[%s] from query[%s], cost: %s ms", queries.size(), query,
+               System.currentTimeMillis() - start);
       return queries;
     }
     finally {
@@ -321,6 +323,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
       queries.add(query.withDataSource(new TableDataSource(entry.getKey()))
                              .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
                                  queryDsSegmentDescriptors.get(entry.getKey()) , entry.getValue())));
+      log.info("Push down query datasource: [%s], intervals: [%s]", entry.getKey(), entry.getValue());
     }
     return queries;
   }

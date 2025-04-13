@@ -22,6 +22,7 @@ package org.apache.druid.guice;
 import com.fasterxml.jackson.databind.Module;
 import com.google.inject.Binder;
 import com.google.inject.Singleton;
+import org.apache.druid.client.materializedview.RealtimeQueryOptimizer;
 import org.apache.druid.initialization.DruidModule;
 import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
 import org.apache.druid.query.materializedview.NoopOptimizer;
@@ -36,7 +37,7 @@ public class QueryablePeonModule implements DruidModule
   @Override
   public void configure(Binder binder)
   {
-    binder.bind(MaterializedViewOptimizer.class).to(NoopOptimizer.class).in(Singleton.class);
+    binder.bind(MaterializedViewOptimizer.class).to(RealtimeQueryOptimizer.class).in(Singleton.class);
     binder.bind(QueryCountStatsProvider.class).to(QueryResource.class);
     Jerseys.addResource(binder, QueryResource.class);
     LifecycleModule.register(binder, QueryResource.class);

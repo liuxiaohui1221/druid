@@ -251,7 +251,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     SortedSet<DerivativeDataSource> expectedSortedDers=
         new TreeSet<>(subDs2.values());
     Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
-    EasyMock.expect(mockClient.getCandidateSortedDerivatives(baseDataSource,requiredFields)).andStubReturn(expectedSortedDers);
+    EasyMock.expect(mockClient.getCandidateSortedDerivatives(baseDataSource, requiredFields, query.getGranularity())).andStubReturn(expectedSortedDers);
 
     EasyMock.replay(mockClient);
     setupViews(mockClient);

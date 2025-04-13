@@ -137,6 +137,10 @@ public interface AppenderatorsManager
       CentralizedDatasourceSchemaConfig centralizedDatasourceSchemaConfig
   );
 
+  default Appenderator getRealtimeAppenderator(){
+     return null;
+  };
+
   /**
    * Removes any internal Appenderator-tracking state associated with the provided taskId.
    *

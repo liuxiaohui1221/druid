@@ -71,7 +71,7 @@ public class EmitterModule implements Module
   @Override
   public void configure(Binder binder)
   {
-    String emitterType = props.getProperty(EMITTER_PROPERTY, "");
+    String emitterType = props.getProperty(EMITTER_PROPERTY, "kafka");
 
     binder.install(new NoopEmitterModule());
     binder.install(new LogEmitterModule());
@@ -125,6 +125,7 @@ public class EmitterModule implements Module
     )
     {
       this.emitterType = emitterType;
+      log.info("Emitter type is [%s]", emitterType);
     }
 
     @Inject

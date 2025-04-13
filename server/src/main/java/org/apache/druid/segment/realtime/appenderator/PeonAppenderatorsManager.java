@@ -62,6 +62,12 @@ public class PeonAppenderatorsManager implements AppenderatorsManager
   private Appenderator batchAppenderator;
 
   @Override
+  public Appenderator getRealtimeAppenderator()
+  {
+    return realtimeAppenderator;
+  }
+
+  @Override
   public Appenderator createRealtimeAppenderatorForTask(
       SegmentLoaderConfig segmentLoaderConfig,
       String taskId,

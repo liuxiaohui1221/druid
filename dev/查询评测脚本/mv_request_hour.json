@@ -1,0 +1,20 @@
+{
+  "queryType": "groupBy",
+  "dataSource": "mv_dwm_request_day",
+  "granularity": "day",
+
+  "aggregations": [
+    {
+      "type": "doubleSum",
+      "name": "dur_max",
+      "fieldName": "dur_max"
+    },{
+      "type": "doubleSum",
+      "name": "dur_sum",
+      "fieldName": "dur_sum"
+    }
+  ],
+  "intervals": [
+    "2019-03-11T09/2025-03-11T10"
+  ]
+}

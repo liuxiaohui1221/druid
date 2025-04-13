@@ -1,0 +1,218 @@
+{
+  "type": "kafka",
+  "spec": {
+    "dataSchema": {
+      "dataSource": "dwm_request",
+      "timestampSpec": {
+        "column": "ts",
+        "format": "auto"
+      },
+      "dimensionsSpec": {
+        "dimensions": [
+          "type", "group", "appid", "appsysid", "agent",
+          "path", "method", "root_appid", "pappid", "pappsysid",
+          "pagent", "pagent_ip", "uevent_model", "uevent_id", "user_id", "session_id",
+          "host", "ip_addr", "province", "city", "page_id", "page_group", "tag","service_type","papp_type",
+          "status","status_code"
+        ],
+        "dimensionExclusions": [
+          "timestamp",
+          "value"
+        ]
+      },
+      "metricsSpec": [
+        {
+          "type": "count",
+          "name": "count"
+        },
+        {
+          "type": "longSum",
+          "name": "dur_sum",
+          "fieldName": "dur"
+        },
+        {
+          "type": "longMin",
+          "name": "dur_min",
+          "fieldName": "dur"
+        },
+        {
+          "type": "longMax",
+          "name": "dur_max",
+          "fieldName": "dur"
+        },
+        {
+          "type": "longSum",
+          "name": "biz_sum",
+          "fieldName": "biz"
+        },
+        {
+          "type": "longMin",
+          "name": "biz_min",
+          "fieldName": "biz"
+        },
+        {
+          "type": "longMax",
+          "name": "biz_max",
+          "fieldName": "biz"
+        },
+        {
+          "type": "longSum",
+          "name": "fail_sum",
+          "fieldName": "fail"
+        },
+        {
+          "type": "longMin",
+          "name": "fail_min",
+          "fieldName": "fail"
+        },
+        {
+          "type": "longMax",
+          "name": "fail_max",
+          "fieldName": "fail"
+        },
+        {
+          "type": "longSum",
+          "name": "httperr_sum",
+          "fieldName": "httperr"
+        },
+        {
+          "type": "longMin",
+          "name": "httperr_min",
+          "fieldName": "httperr"
+        },
+        {
+          "type": "longMax",
+          "name": "httperr_max",
+          "fieldName": "httperr"
+        },
+        {
+          "type": "longSum",
+          "name": "neterr_sum",
+          "fieldName": "neterr"
+        },
+        {
+          "type": "longMin",
+          "name": "neterr_min",
+          "fieldName": "neterr"
+        },
+        {
+          "type": "longMax",
+          "name": "neterr_max",
+          "fieldName": "neterr"
+        },
+        {
+          "type": "longSum",
+          "name": "err_sum",
+          "fieldName": "err"
+        },
+        {
+          "type": "longMin",
+          "name": "err_min",
+          "fieldName": "err"
+        },
+        {
+          "type": "longMax",
+          "name": "err_max",
+          "fieldName": "err"
+        },
+        {
+          "type": "longSum",
+          "name": "tolerated_sum",
+          "fieldName": "tolerated"
+        },
+        {
+          "type": "longMin",
+          "name": "tolerated_min",
+          "fieldName": "tolerated"
+        },
+        {
+          "type": "longMax",
+          "name": "tolerated_max",
+          "fieldName": "tolerated"
+        },
+        {
+          "type": "longSum",
+          "name": "frustrated_sum",
+          "fieldName": "frustrated"
+        },
+        {
+          "type": "longMin",
+          "name": "frustrated_min",
+          "fieldName": "frustrated"
+        },
+        {
+          "type": "longMax",
+          "name": "frustrated_max",
+          "fieldName": "frustrated"
+        },
+        {
+          "type": "longSum",
+          "name": "exception_sum",
+          "fieldName": "exception"
+        },
+        {
+          "type": "longMin",
+          "name": "exception_min",
+          "fieldName": "exception"
+        },
+        {
+          "type": "longMax",
+          "name": "exception_max",
+          "fieldName": "exception"
+        },
+        {
+          "type": "longSum",
+          "name": "err_4xx_sum",
+          "fieldName": "err_4xx"
+        },
+        {
+          "type": "longMin",
+          "name": "err_4xx_min",
+          "fieldName": "err_4xx"
+        },
+        {
+          "type": "longMax",
+          "name": "err_4xx_max",
+          "fieldName": "err_4xx"
+        },
+        {
+          "type": "longSum",
+          "name": "err_5xx_sum",
+          "fieldName": "err_5xx"
+        },
+        {
+          "type": "longMin",
+          "name": "err_5xx_min",
+          "fieldName": "err_5xx"
+        },
+        {
+          "type": "longMax",
+          "name": "err_5xx_max",
+          "fieldName": "err_5xx"
+        }
+      ],
+      "granularitySpec": {
+        "type": "uniform",
+        "segmentGranularity": "HOUR",
+        "queryGranularity": "NONE"
+      }
+    },
+    "ioConfig": {
+      "topic": "dwm_request",
+      "inputFormat": {
+        "type": "json"
+      },
+      "consumerProperties": {
+        "bootstrap.servers": "localhost:9092"
+      },
+      "taskCount": 1,
+      "replicas": 1,
+      "taskDuration": "PT1H",
+      "type": "kafka"
+    },
+    "tuningConfig": {
+      "type": "kafka",
+      "maxRowsPerSegment": 5000000
+    }
+  }
+}

@@ -5,7 +5,7 @@
   "granularitySpec": {
     "type": "uniform",
     "segmentGranularity": "HOUR",
-    "queryGranularity": "MINUTE"
+    "queryGranularity": "HOUR"
   },
   "dimensionsSpec": {
     "dimensions": [
