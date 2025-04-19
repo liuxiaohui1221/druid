@@ -309,7 +309,9 @@ public class DerivativeDataSourceManager
     getAllDerivatives().values().forEach(map->allDerivatives.addAll(map.values()));
     Set<DerivativeDataSource> derivativesWithRequiredFields = new HashSet<>();
     for (DerivativeDataSource derivativeDataSource : allDerivatives) {
-      if (derivativeDataSource.getColumns().containsAll(requiredFields) && derivativeDataSource.getGranularitySpec().getQueryGranularity().isFinerThan(queryGranularity)) {
+      if (derivativeDataSource.getColumns().containsAll(requiredFields)
+          && (derivativeDataSource.getGranularitySpec().getQueryGranularity().isFinerThan(queryGranularity))
+          || queryGranularity.equals(derivativeDataSource.getGranularitySpec().getQueryGranularity())) {
         derivativesWithRequiredFields.add(derivativeDataSource);
       }
     }
