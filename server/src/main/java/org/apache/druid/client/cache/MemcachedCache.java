@@ -77,7 +77,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class MemcachedCache implements Cache
+public class MemcachedCache implements Cache<Cache.NamedKey,byte[]>
 {
   private static final Logger log = new Logger(MemcachedCache.class);
 

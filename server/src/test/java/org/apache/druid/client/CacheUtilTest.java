@@ -200,13 +200,13 @@ public class CacheUtilTest
     }
 
     @Override
-    public Function<T, CacheType> prepareForCache(boolean isResultLevelCache)
+    public Function<T, CacheType> prepareForCache(boolean isResultLevelCache, boolean enableSubDimensionFilterReuse)
     {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Function<CacheType, T> pullFromCache(boolean isResultLevelCache)
+    public Function<CacheType, T> pullFromCache(boolean isResultLevelCache, boolean enableSubDimensionFilterReuse)
     {
       throw new UnsupportedOperationException();
     }

@@ -48,6 +48,6 @@ public interface CachePopulator
       Sequence<T> sequence,
       Function<T, CacheType> cacheFn,
       Cache cache,
-      Cache.NamedKey cacheKey
+      Object cacheKey
   );
 }

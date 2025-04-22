@@ -84,6 +84,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
 {
 
   private static final SegmentId SEGMENT_ID = SegmentId.dummy("testSegment");
+  private final boolean enableSubDimensionFilterReuse=false;
 
   @BeforeClass
   public static void setUpClass()
@@ -462,7 +463,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
         )
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(
         result1
     );
 
@@ -472,7 +473,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    Result<TopNResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    Result<TopNResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result1, fromCacheResult);
 
@@ -526,7 +527,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
     }
 
 
-    Object preparedResultCacheValue = strategy.prepareForCache(true).apply(
+    Object preparedResultCacheValue = strategy.prepareForCache(true, enableSubDimensionFilterReuse).apply(
         result2
     );
 
@@ -535,7 +536,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    Result<TopNResultValue> fromResultCacheResult = strategy.pullFromCache(true).apply(fromResultCacheValue);
+    Result<TopNResultValue> fromResultCacheResult = strategy.pullFromCache(true, enableSubDimensionFilterReuse).apply(fromResultCacheValue);
     Assert.assertEquals(typeAdjustedResult2, fromResultCacheResult);
   }
 
@@ -593,7 +594,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
         )
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(
         result1
     );
 
@@ -603,7 +604,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    Result<TopNResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    Result<TopNResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result1, fromCacheResult);
 
@@ -622,7 +623,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
         )
     );
 
-    Object preparedResultCacheValue = strategy.prepareForCache(true).apply(
+    Object preparedResultCacheValue = strategy.prepareForCache(true, enableSubDimensionFilterReuse).apply(
         resultLevelCacheResult
     );
 
@@ -631,7 +632,7 @@ public class TopNQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    Result<TopNResultValue> fromResultCacheResult = strategy.pullFromCache(true).apply(fromResultCacheValue);
+    Result<TopNResultValue> fromResultCacheResult = strategy.pullFromCache(true, enableSubDimensionFilterReuse).apply(fromResultCacheValue);
     Assert.assertEquals(resultLevelCacheResult, fromResultCacheResult);
   }
 

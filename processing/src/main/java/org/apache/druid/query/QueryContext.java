@@ -277,6 +277,15 @@ public class QueryContext
   {
     return getBoolean(QueryContexts.USE_CACHE_KEY, defaultValue);
   }
+  public boolean isEnableReuseCache()
+  {
+    return isEnableReuseCache(QueryContexts.DEFAULT_ENABLE_REUSE_CACHE);
+  }
+
+  public boolean isEnableReuseCache(boolean defaultValue)
+  {
+    return getBoolean(QueryContexts.ENABLE_REUSE_CACHE_KEY, defaultValue);
+  }
 
   public boolean isPopulateResultLevelCache()
   {

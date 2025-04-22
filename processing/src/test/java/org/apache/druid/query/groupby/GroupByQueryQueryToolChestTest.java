@@ -92,6 +92,7 @@ import java.util.List;
 
 public class GroupByQueryQueryToolChestTest extends InitializedNullHandlingTest
 {
+  private boolean enableSubDimensionFilterReuse=false;
   @BeforeClass
   public static void setUpClass()
   {
@@ -549,7 +550,7 @@ public class GroupByQueryQueryToolChestTest extends InitializedNullHandlingTest
         getIntermediateComplexValue(ValueType.STRING, "val1")
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(result1);
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(result1);
 
     ObjectMapper objectMapper = TestHelper.makeJsonMapper();
     Object fromCacheValue = objectMapper.readValue(
@@ -557,7 +558,7 @@ public class GroupByQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    ResultRow fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    ResultRow fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result1, fromCacheResult);
   }
@@ -995,7 +996,7 @@ public class GroupByQueryQueryToolChestTest extends InitializedNullHandlingTest
         getIntermediateComplexValue(valueType.getType(), dimValue)
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(result1);
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(result1);
 
     ObjectMapper objectMapper = TestHelper.makeJsonMapper();
     Object fromCacheValue = objectMapper.readValue(
@@ -1003,7 +1004,7 @@ public class GroupByQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    ResultRow fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    ResultRow fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result1, fromCacheResult);
 
@@ -1021,7 +1022,7 @@ public class GroupByQueryQueryToolChestTest extends InitializedNullHandlingTest
     }
 
 
-    Object preparedResultCacheValue = strategy.prepareForCache(true).apply(
+    Object preparedResultCacheValue = strategy.prepareForCache(true, enableSubDimensionFilterReuse).apply(
         result2
     );
 
@@ -1030,7 +1031,7 @@ public class GroupByQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    ResultRow fromResultCacheResult = strategy.pullFromCache(true).apply(fromResultCacheValue);
+    ResultRow fromResultCacheResult = strategy.pullFromCache(true, enableSubDimensionFilterReuse).apply(fromResultCacheValue);
     Assert.assertEquals(typeAdjustedResult2, fromResultCacheResult);
   }
 

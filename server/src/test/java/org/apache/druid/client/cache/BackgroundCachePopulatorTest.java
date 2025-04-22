@@ -127,7 +127,7 @@ public class BackgroundCachePopulatorTest
     );
     this.baseRunner = (queryPlus, responseContext) -> resultSeq;
 
-    this.cache = new Cache()
+    this.cache = new Cache<Cache.NamedKey,byte[]>()
     {
       private final ConcurrentMap<NamedKey, byte[]> baseMap = new ConcurrentHashMap<>();
 
@@ -196,9 +196,9 @@ public class BackgroundCachePopulatorTest
         segmentDescriptor,
         cacheStrategy.computeCacheKey(query)
     );
-
+    boolean enableSubDimensionFilterReuse=false;
     Sequence res = this.backgroundCachePopulator.wrap(this.baseRunner.run(QueryPlus.wrap(query), ResponseContext.createEmpty()),
-        (value) -> cacheStrategy.prepareForSegmentLevelCache().apply(value), cache, cacheKey);
+                                                      (value) -> cacheStrategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(value), cache, cacheKey);
     Assert.assertFalse("sequence must not be closed", closable.isClosed());
     Assert.assertNull("cache must be empty", cache.get(cacheKey));
 

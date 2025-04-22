@@ -20,6 +20,7 @@
 package org.apache.druid.client.cache;
 
 import com.google.common.base.Preconditions;
+import org.apache.druid.client.reusecache.CacheKey;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 
@@ -27,15 +28,17 @@ import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  */
-public interface Cache extends Closeable
+public interface Cache<K,V> extends Closeable
 {
   @Nullable
-  byte[] get(NamedKey key);
-  void put(NamedKey key, byte[] value);
+  byte[] get(K key);
+  void put(K key, V value);
 
   /**
    * Resulting map should not contain any null values (i.e. cache misses should not be included)
@@ -43,7 +46,12 @@ public interface Cache extends Closeable
    * @param keys
    * @return
    */
-  Map<NamedKey, byte[]> getBulk(Iterable<NamedKey> keys);
+  Map<K, V> getBulk(Iterable<K> keys);
+
+  default List<CacheKey> getDimensionToKeys(String namespace)
+  {
+    return null;
+  }
 
   void close(String namespace);
 
@@ -57,7 +65,7 @@ public interface Cache extends Closeable
    */
   void doMonitor(ServiceEmitter emitter);
 
-  class NamedKey
+  class NamedKey extends CacheKey
   {
     public final String namespace;
     public final byte[] key;

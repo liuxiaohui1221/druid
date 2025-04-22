@@ -72,7 +72,7 @@ public class BackgroundCachePopulator implements CachePopulator
       final Sequence<T> sequence,
       final Function<T, CacheType> cacheFn,
       final Cache cache,
-      final Cache.NamedKey cacheKey
+      final Object cacheKey
   )
   {
     final List<ListenableFuture<CacheType>> cacheFutures = new ArrayList<>();
@@ -95,7 +95,7 @@ public class BackgroundCachePopulator implements CachePopulator
                 @Override
                 public void onSuccess(List<CacheType> results)
                 {
-                  populateCache(cache, cacheKey, results);
+                  populateCache(cache, (Cache.NamedKey)cacheKey, results);
                   // Help out GC by making sure all references are gone
                   cacheFutures.clear();
                 }

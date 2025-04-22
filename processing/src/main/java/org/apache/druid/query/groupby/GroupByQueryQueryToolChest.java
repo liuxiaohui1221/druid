@@ -63,6 +63,7 @@ import org.apache.druid.query.QueryResourceId;
 import org.apache.druid.query.QueryRunner;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.SubqueryQueryRunner;
+import org.apache.druid.query.aggregation.Aggregator;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.aggregation.MetricManipulationFn;
 import org.apache.druid.query.aggregation.MetricManipulatorFns;
@@ -73,19 +74,24 @@ import org.apache.druid.query.dimension.DimensionSpec;
 import org.apache.druid.query.extraction.ExtractionFn;
 import org.apache.druid.segment.Cursor;
 import org.apache.druid.segment.DimensionHandlerUtils;
+import org.apache.druid.segment.StringDimensionDictionary;
 import org.apache.druid.segment.column.RowSignature;
 import org.joda.time.DateTime;
+import org.joda.time.Interval;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BinaryOperator;
 
 /**
@@ -106,6 +112,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
   private final GroupByQueryConfig queryConfig;
   private final GroupByQueryMetricsFactory queryMetricsFactory;
   private final GroupByResourcesReservationPool groupByResourcesReservationPool;
+  private final ConcurrentHashMap<String, StringDimensionDictionary> dataSourceDimDictionaryMap = new ConcurrentHashMap<>();
 
   @VisibleForTesting
   public GroupByQueryQueryToolChest(
@@ -540,11 +547,20 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
   @Override
   public CacheStrategy<ResultRow, Object, GroupByQuery> getCacheStrategy(final GroupByQuery query)
   {
+    StringDimensionDictionary colDictionary = dataSourceDimDictionaryMap.computeIfAbsent(
+        query.getDataSource()
+             .getTableNames()
+             .stream()
+             .findFirst()
+             .get(),
+        k -> new StringDimensionDictionary(false)
+    );
     return new CacheStrategy<ResultRow, Object, GroupByQuery>()
     {
       private static final byte CACHE_STRATEGY_VERSION = 0x1;
       private final List<AggregatorFactory> aggs = query.getAggregatorSpecs();
       private final List<DimensionSpec> dims = query.getDimensions();
+
 
       @Override
       public boolean isCacheable(GroupByQuery query, boolean willMergeRunners, boolean bySegment)
@@ -599,10 +615,14 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
       }
 
       @Override
-      public Function<ResultRow, Object> prepareForCache(boolean isResultLevelCache)
+      public Function<ResultRow, Object> prepareForCache(boolean isResultLevelCache,
+                                                         boolean enableSubDimensionFilterReuse
+      )
       {
         final boolean resultRowHasTimestamp = query.getResultRowHasTimestamp();
-
+        if(enableSubDimensionFilterReuse){
+          return prepareForCacheReuseFunction(resultRowHasTimestamp,isResultLevelCache,query);
+        }
         return new Function<ResultRow, Object>()
         {
           @Override
@@ -610,7 +630,6 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
           {
             final List<Object> retVal = new ArrayList<>(1 + dims.size() + aggs.size());
             int inPos = 0;
-
             if (resultRowHasTimestamp) {
               retVal.add(resultRow.getLong(inPos++));
             } else {
@@ -633,14 +652,57 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
         };
       }
 
+      private Function<ResultRow, Object> prepareForCacheReuseFunction(
+          boolean resultRowHasTimestamp,
+          boolean isResultLevelCache, GroupByQuery query) {
+        return new Function<ResultRow, Object>()
+        {
+          @Override
+          public Object apply(ResultRow resultRow)
+          {
+            int size = Math.max(colDictionary.size(),1 + dims.size() + aggs.size());
+            final Object[] retVal = new Object[size];
+            int inPos = 0;
+            if (resultRowHasTimestamp) {
+              int newPos=colDictionary.add("__time");
+              retVal[newPos]=resultRow.getLong(inPos++);
+            } else {
+              retVal[0]=query.getUniversalTimestamp().getMillis();
+            }
+
+            for (DimensionSpec dim : dims) {
+              int newPos=colDictionary.add(Arrays.toString(dim.getCacheKey()));
+              retVal[newPos]=resultRow.get(inPos++);
+            }
+            for (AggregatorFactory agg : aggs) {
+              int newPos=colDictionary.add(Arrays.toString(agg.getCacheKey()));
+              retVal[newPos]=resultRow.get(inPos++);
+            }
+            if (isResultLevelCache) {
+              for (int i = 0; i < query.getPostAggregatorSpecs().size(); i++) {
+                int newPos=colDictionary.add(Arrays.toString(query.getPostAggregatorSpecs()
+                                                                               .get(i)
+                                                                               .getCacheKey()));
+                retVal[newPos]=resultRow.get(inPos++);
+              }
+            }
+            return retVal;
+          }
+        };
+      }
+
       @Override
-      public Function<Object, ResultRow> pullFromCache(boolean isResultLevelCache)
+      public Function<Object, ResultRow> pullFromCache(boolean isResultLevelCache,
+                                                       boolean enableSubDimensionFilterReuse
+      )
       {
         final boolean resultRowHasTimestamp = query.getResultRowHasTimestamp();
         final int dimensionStart = query.getResultRowDimensionStart();
         final int aggregatorStart = query.getResultRowAggregatorStart();
         final int postAggregatorStart = query.getResultRowPostAggregatorStart();
-
+        if(enableSubDimensionFilterReuse){
+          return pullFromCacheReuseFunction(resultRowHasTimestamp,isResultLevelCache,query);
+        }
         return new Function<Object, ResultRow>()
         {
           private final Granularity granularity = query.getGranularity();
@@ -705,8 +767,145 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
           }
         };
       }
+
+      private Function<Object, ResultRow> pullFromCacheReuseFunction(boolean resultRowHasTimestamp, boolean isResultLevelCache, GroupByQuery query) {
+        return new Function<Object, ResultRow>()
+        {
+          private final Granularity granularity = query.getGranularity();
+          final int dimensionStart = query.getResultRowDimensionStart();
+          final int aggregatorStart = query.getResultRowAggregatorStart();
+          final int postAggregatorStart = query.getResultRowPostAggregatorStart();
+          final List<Interval> intervals = query.getIntervals();
+          @Override
+          public ResultRow apply(Object input)
+          {
+            List<Object> results = (List<Object>) input;
+
+            DateTime timestamp =
+                granularity.toDateTime(((Number) results.get(0)).longValue());
+            //判断时间是否在intervals范围内
+            boolean flag= false;
+            for(Interval interval : intervals) {
+              if(interval.getStartMillis()<=timestamp.getMillis() && interval.getEndMillis()>=timestamp.getMillis()){
+                flag=true;
+                break;
+              }
+            }
+            if(!flag){
+              return null;
+            }
+            final int size = isResultLevelCache
+                             ? query.getResultRowSizeWithPostAggregators()
+                             : query.getResultRowSizeWithoutPostAggregators();
+
+            final ResultRow resultRow = ResultRow.create(size);
+
+            if (resultRowHasTimestamp) {
+              resultRow.set(0, timestamp.getMillis());
+            }
+
+            final Iterator<DimensionSpec> dimsIter = dims.iterator();
+            int dimPos = 0;
+            while (dimsIter.hasNext()) {
+              final DimensionSpec dimensionSpec = dimsIter.next();
+              // Must convert generic Jackson-deserialized type into the proper type.
+              resultRow.set(
+                  dimensionStart + dimPos,
+                  DimensionHandlerUtils.convertObjectToType(results.get(colDictionary.getId(
+                                                                Arrays.toString(dimensionSpec.getCacheKey()))),
+                                                            dimensionSpec.getOutputType())
+              );
+              dimPos++;
+            }
+
+            CacheStrategy.fetchAggregatorsFromCache(colDictionary,
+                aggs,
+                results,
+                isResultLevelCache,
+                (aggName, aggPosition, aggValueObject) -> {
+                  resultRow.set(aggregatorStart + aggPosition, aggValueObject);
+                }
+            );
+
+            if (isResultLevelCache) {
+              for (int postPos = 0; postPos < query.getPostAggregatorSpecs().size(); postPos++) {
+                resultRow.set(postAggregatorStart + postPos,
+                              results.get(colDictionary.getId(Arrays.toString(query.getPostAggregatorSpecs().get(postPos).getCacheKey()))));
+              }
+            }
+
+            return resultRow;
+          }
+        };
+      }
+
+      @Override
+      public Sequence<ResultRow> reAggregateCacheSequence(
+          Sequence<ResultRow> originalResult,
+          List<String> subDimensions
+      )
+      {
+        // 初始化累加器
+        SubDimensionAccumulator accumulator = new SubDimensionAccumulator(
+            subDimensions,
+            query.getAggregatorSpecs().toArray(new AggregatorFactory[0])
+        );
+        Granularity granularity = query.getGranularity();
+        final int dimensionStart = query.getResultRowDimensionStart();
+        final int aggregatorStart = query.getResultRowAggregatorStart();
+        final int size = query.getResultRowSizeWithoutPostAggregators();
+
+        final boolean resultRowHasTimestamp = query.getResultRowHasTimestamp();
+        originalResult.flatMap(row -> {
+
+          // 提取子维度值作为新分组键
+          Map<String, Object> subKey = extractSubDimensions(row, subDimensions, dimensionStart);
+          if (resultRowHasTimestamp) {
+            long truncate_time = granularity.bucketStart(row.getLong(0));
+            subKey.put("__time", truncate_time);
+          }
+          // 合并到累加器（内存维护分组状态）
+          mergeIntoAccumulator(subKey, row, accumulator, aggregatorStart);
+          return Sequences.empty();
+        }).toList();
+        // 3. 将累加器的最终结果转换为Sequence
+        return Sequences.simple(accumulator.toRows(size,dimensionStart,aggregatorStart));
+      }
+
+      private void mergeIntoAccumulator(
+          Map<String, Object> subKey,
+          ResultRow parentRow,
+          SubDimensionAccumulator accumulator,
+          int aggregatorStart
+      ) {
+        Aggregator[] aggregators = accumulator.getOrCreateAggregators(subKey);
+        for (int i = 0; i < aggregators.length; i++) {
+          Object parentValue = parentRow.get(aggregatorStart+i);
+          // 1. 获取绑定到该聚合器的可变列选择器
+          MutableObjectColumnSelector selector = accumulator.getSelectorForAggregator(aggregators[i]);
+
+          // 2. 设置父维度的聚合值
+          selector.setValue(parentValue);
+
+          // 3. 调用无参数 aggregate() 方法，此时会从 selector 中读取 parentValue
+          aggregators[i].aggregate();
+
+          // 4. 重置选择器
+          selector.setValue(null);
+        }
+      }
+
+      // 提取子维度值的辅助方法
+      private Map<String, Object> extractSubDimensions(ResultRow row, List<String> subDims, int dimensionStart) {
+        Map<String, Object> key = new HashMap<>();
+        for (int i=0;i<subDims.size();i++) {
+          key.put(subDims.get(i), row.get(dimensionStart+i));
+        }
+        return key;
+      }
     };
   }
+
 
   @Override
   public boolean canPerformSubquery(Query<?> subquery)

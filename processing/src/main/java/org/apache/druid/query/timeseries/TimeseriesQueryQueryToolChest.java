@@ -326,7 +326,9 @@ public class TimeseriesQueryQueryToolChest extends QueryToolChest<Result<Timeser
       }
 
       @Override
-      public Function<Result<TimeseriesResultValue>, Object> prepareForCache(boolean isResultLevelCache)
+      public Function<Result<TimeseriesResultValue>, Object> prepareForCache(boolean isResultLevelCache,
+                                                                             boolean enableSubDimensionFilterReuse
+      )
       {
         return input -> {
           TimeseriesResultValue results = input.getValue();
@@ -351,7 +353,9 @@ public class TimeseriesQueryQueryToolChest extends QueryToolChest<Result<Timeser
       }
 
       @Override
-      public Function<Object, Result<TimeseriesResultValue>> pullFromCache(boolean isResultLevelCache)
+      public Function<Object, Result<TimeseriesResultValue>> pullFromCache(boolean isResultLevelCache,
+                                                                           boolean enableSubDimensionFilterReuse
+      )
       {
         return new Function<Object, Result<TimeseriesResultValue>>()
         {

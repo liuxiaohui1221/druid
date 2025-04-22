@@ -33,7 +33,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class HybridCache implements Cache
+public class HybridCache implements Cache<Cache.NamedKey, byte[]>
 {
   private static final Logger log = new Logger(HybridCache.class);
 

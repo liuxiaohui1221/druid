@@ -113,7 +113,7 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
         if (resultLevelCachePopulator == null) {
           return resultFromClient;
         }
-        final Function<T, Object> cacheFn = strategy.prepareForCache(true);
+        final Function<T, Object> cacheFn = strategy.prepareForCache(true, false);
 
         return Sequences.wrap(
             Sequences.map(
@@ -192,7 +192,7 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
     if (cachedResult == null) {
       log.error("Cached result set is null");
     }
-    final Function<Object, T> pullFromCacheFunction = strategy.pullFromCache(true);
+    final Function<Object, T> pullFromCacheFunction = strategy.pullFromCache(true, false);
     final TypeReference<T> cacheObjectClazz = strategy.getCacheObjectClazz();
     //Skip the resultsetID and its length bytes
     Sequence<T> cachedSequence = Sequences.simple(() -> {

@@ -332,6 +332,7 @@ public class TimeBoundaryQueryQueryToolChestTest
   @Test
   public void testCacheStrategy() throws Exception
   {
+    boolean enableSubDimensionFilterReuse=false;
     CacheStrategy<Result<TimeBoundaryResultValue>, Object, TimeBoundaryQuery> strategy =
         new TimeBoundaryQueryQueryToolChest().getCacheStrategy(
             new TimeBoundaryQuery(
@@ -352,7 +353,7 @@ public class TimeBoundaryQueryQueryToolChestTest
     )
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(
         result
     );
 
@@ -362,7 +363,7 @@ public class TimeBoundaryQueryQueryToolChestTest
         strategy.getCacheObjectClazz()
     );
 
-    Result<TimeBoundaryResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    Result<TimeBoundaryResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result, fromCacheResult);
   }

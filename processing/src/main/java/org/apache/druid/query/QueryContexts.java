@@ -72,6 +72,7 @@ public class QueryContexts
   public static final String NUM_RETRIES_ON_MISSING_SEGMENTS_KEY = "numRetriesOnMissingSegments";
   public static final String RETURN_PARTIAL_RESULTS_KEY = "returnPartialResults";
   public static final String USE_CACHE_KEY = "useCache";
+  public static final String ENABLE_REUSE_CACHE_KEY = "enableReuseCache";
   public static final String SECONDARY_PARTITION_PRUNING_KEY = "secondaryPartitionPruning";
   public static final String ENABLE_DEBUG = "debug";
   public static final String BY_SEGMENT_KEY = "bySegment";
@@ -101,6 +102,7 @@ public class QueryContexts
   public static final boolean DEFAULT_BY_SEGMENT = false;
   public static final boolean DEFAULT_POPULATE_CACHE = true;
   public static final boolean DEFAULT_USE_CACHE = true;
+  public static final boolean DEFAULT_ENABLE_REUSE_CACHE = true;
   public static final boolean DEFAULT_POPULATE_RESULTLEVEL_CACHE = true;
   public static final boolean DEFAULT_USE_RESULTLEVEL_CACHE = true;
   public static final Vectorize DEFAULT_VECTORIZE = Vectorize.TRUE;

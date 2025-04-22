@@ -37,6 +37,7 @@ import org.apache.druid.client.cache.CachePopulatorStats;
 import org.apache.druid.client.cache.CacheStats;
 import org.apache.druid.client.cache.ForegroundCachePopulator;
 import org.apache.druid.client.cache.MapCache;
+import org.apache.druid.common.config.NullHandling;
 import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.ISE;
@@ -92,9 +93,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RunWith(Parameterized.class)
 public class CachingQueryRunnerTest
 {
+  private boolean enableSubDimensionFilterReuse=false;
   @Parameterized.Parameters(name = "numBackgroundThreads={0}")
   public static Iterable<Object[]> constructorFeeder()
   {
+    NullHandling.initializeForTests();
     return QueryRunnerTestHelper.cartesian(Arrays.asList(5, 1, 0));
   }
 
@@ -280,7 +283,7 @@ public class CachingQueryRunnerTest
     );
 
     final CountDownLatch cacheMustBePutOnce = new CountDownLatch(1);
-    Cache cache = new Cache()
+    Cache cache = new Cache<Cache.NamedKey,byte[]>()
     {
       private final ConcurrentMap<NamedKey, byte[]> baseMap = new ConcurrentHashMap<>();
 
@@ -361,7 +364,7 @@ public class CachingQueryRunnerTest
     byte[] cacheValue = cache.get(cacheKey);
     Assert.assertNotNull(cacheValue);
 
-    Function<Object, Result> fn = cacheStrategy.pullFromSegmentLevelCache();
+    Function<Object, Result> fn = cacheStrategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse);
     List<Result> cacheResults = Lists.newArrayList(
         Iterators.transform(
             objectMapper.readValues(
@@ -391,7 +394,8 @@ public class CachingQueryRunnerTest
     );
 
     Cache cache = MapCache.create(1024 * 1024);
-    cache.put(cacheKey, toByteArray(Iterables.transform(expectedResults, cacheStrategy.prepareForSegmentLevelCache())));
+    cache.put(cacheKey, toByteArray(Iterables.transform(expectedResults, cacheStrategy.prepareForSegmentLevelCache(
+        enableSubDimensionFilterReuse))));
 
     CachingQueryRunner runner = makeCachingQueryRunner(
         cacheKeyPrefix,
@@ -441,6 +445,11 @@ public class CachingQueryRunnerTest
           public boolean isUseCache()
           {
             return true;
+          }
+
+          @Override
+          public boolean isEnableSubQueryReuse(){
+            return false;
           }
         }
 

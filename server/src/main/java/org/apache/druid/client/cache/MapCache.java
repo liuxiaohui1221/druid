@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  */
-public class MapCache implements Cache
+public class MapCache implements Cache<Cache.NamedKey, byte[]>
 {
   public static Cache create(long sizeInBytes)
   {

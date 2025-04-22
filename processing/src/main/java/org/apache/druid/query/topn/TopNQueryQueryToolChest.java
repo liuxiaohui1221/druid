@@ -331,7 +331,9 @@ public class TopNQueryQueryToolChest extends QueryToolChest<Result<TopNResultVal
       }
 
       @Override
-      public Function<Result<TopNResultValue>, Object> prepareForCache(boolean isResultLevelCache)
+      public Function<Result<TopNResultValue>, Object> prepareForCache(boolean isResultLevelCache,
+                                                                       boolean enableSubDimensionFilterReuse
+      )
       {
         return new Function<Result<TopNResultValue>, Object>()
         {
@@ -364,7 +366,9 @@ public class TopNQueryQueryToolChest extends QueryToolChest<Result<TopNResultVal
       }
 
       @Override
-      public Function<Object, Result<TopNResultValue>> pullFromCache(boolean isResultLevelCache)
+      public Function<Object, Result<TopNResultValue>> pullFromCache(boolean isResultLevelCache,
+                                                                     boolean enableSubDimensionFilterReuse
+      )
       {
         return new Function<Object, Result<TopNResultValue>>()
         {

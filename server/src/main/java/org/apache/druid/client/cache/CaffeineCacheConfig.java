@@ -21,6 +21,7 @@ package org.apache.druid.client.cache;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.druid.java.util.common.HumanReadableBytes;
+import org.checkerframework.checker.index.qual.NonNegative;
 
 import java.util.concurrent.Executor;
 
@@ -39,6 +40,9 @@ public class CaffeineCacheConfig
 
   @JsonProperty
   private boolean evictOnClose = false;
+
+  @JsonProperty
+  private int maxDims = 10000;
 
   public long getExpireAfter()
   {
@@ -59,4 +63,6 @@ public class CaffeineCacheConfig
   {
     return evictOnClose;
   }
+
+  public long getMaxDims() { return maxDims;}
 }

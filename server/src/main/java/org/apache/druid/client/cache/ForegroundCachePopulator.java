@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.google.common.base.Preconditions;
 import org.apache.commons.lang.mutable.MutableBoolean;
+import org.apache.druid.client.reusecache.CacheKey;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.SequenceWrapper;
 import org.apache.druid.java.util.common.guava.Sequences;
@@ -59,10 +60,10 @@ public class ForegroundCachePopulator implements CachePopulator
 
   @Override
   public <T, CacheType> Sequence<T> wrap(
-      final Sequence<T> sequence,
-      final Function<T, CacheType> cacheFn,
-      final Cache cache,
-      final Cache.NamedKey cacheKey
+      Sequence<T> sequence,
+      Function<T, CacheType> cacheFn,
+      Cache cache,
+      Object cacheKey
   )
   {
     final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -77,28 +78,30 @@ public class ForegroundCachePopulator implements CachePopulator
       throw new RuntimeException(e);
     }
 
-    return Sequences.wrap(
-        Sequences.map(
-            sequence,
-            input -> {
-              if (!tooBig.isTrue()) {
-                try {
-                  JacksonUtils.writeObjectUsingSerializerProvider(jsonGenerator, serializers, cacheFn.apply(input));
+    Sequence<T> mapSeq = Sequences.map(
+        sequence,
+        input -> {
+          if (!tooBig.isTrue()) {
+            try {
+              JacksonUtils.writeObjectUsingSerializerProvider(jsonGenerator, serializers, cacheFn.apply(input));
 
-                  // Not flushing jsonGenerator before checking this, but should be ok since Jackson buffers are
-                  // typically just a few KB, and we don't want to waste cycles flushing.
-                  if (maxEntrySize > 0 && bytes.size() > maxEntrySize) {
-                    tooBig.setValue(true);
-                  }
-                }
-                catch (IOException e) {
-                  throw new RuntimeException(e);
-                }
+              // Not flushing jsonGenerator before checking this, but should be ok since Jackson buffers are
+              // typically just a few KB, and we don't want to waste cycles flushing.
+              if (maxEntrySize > 0 && bytes.size() > maxEntrySize) {
+                tooBig.setValue(true);
               }
-
-              return input;
             }
-        ),
+            catch (IOException e) {
+              throw new RuntimeException(e);
+            }
+          }
+
+          return input;
+        }
+    );
+
+    return Sequences.wrap(
+        mapSeq,
         new SequenceWrapper()
         {
           @Override

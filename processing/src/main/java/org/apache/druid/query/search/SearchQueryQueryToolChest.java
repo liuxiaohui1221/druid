@@ -43,7 +43,6 @@ import org.apache.druid.query.aggregation.MetricManipulationFn;
 import org.apache.druid.query.cache.CacheKeyBuilder;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.dimension.DimensionSpec;
-import org.apache.druid.query.filter.DimFilter;
 
 import javax.annotation.Nullable;
 import java.util.Collections;
@@ -168,7 +167,9 @@ public class SearchQueryQueryToolChest extends QueryToolChest<Result<SearchResul
       }
 
       @Override
-      public Function<Result<SearchResultValue>, Object> prepareForCache(boolean isResultLevelCache)
+      public Function<Result<SearchResultValue>, Object> prepareForCache(boolean isResultLevelCache,
+                                                                         boolean enableSubDimensionFilterReuse
+      )
       {
         return new Function<Result<SearchResultValue>, Object>()
         {
@@ -183,7 +184,9 @@ public class SearchQueryQueryToolChest extends QueryToolChest<Result<SearchResul
       }
 
       @Override
-      public Function<Object, Result<SearchResultValue>> pullFromCache(boolean isResultLevelCache)
+      public Function<Object, Result<SearchResultValue>> pullFromCache(boolean isResultLevelCache,
+                                                                       boolean enableSubDimensionFilterReuse
+      )
       {
         return new Function<Object, Result<SearchResultValue>>()
         {

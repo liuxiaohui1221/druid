@@ -22,13 +22,15 @@ package org.apache.druid.client.cache;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.google.inject.Provider;
+import org.apache.druid.client.reusecache.CaffeineReuseCacheProvider;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = CaffeineCacheProvider.class)
 @JsonSubTypes(value = {
     @JsonSubTypes.Type(name = "local", value = LocalCacheProvider.class),
     @JsonSubTypes.Type(name = "memcached", value = MemcachedCacheProvider.class),
     @JsonSubTypes.Type(name = "hybrid", value = HybridCacheProvider.class),
-    @JsonSubTypes.Type(name = "caffeine", value = CaffeineCacheProvider.class)
+    @JsonSubTypes.Type(name = "caffeine", value = CaffeineCacheProvider.class),
+    @JsonSubTypes.Type(name = "caffeine_reuse", value = CaffeineReuseCacheProvider.class)
 })
 public interface CacheProvider extends Provider<Cache>
 {

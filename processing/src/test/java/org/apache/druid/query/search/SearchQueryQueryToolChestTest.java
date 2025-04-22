@@ -46,6 +46,7 @@ public class SearchQueryQueryToolChestTest extends InitializedNullHandlingTest
   @Test
   public void testCacheStrategy() throws Exception
   {
+    boolean enableSubDimensionFilterReuse = false;
     CacheStrategy<Result<SearchResultValue>, Object, SearchQuery> strategy =
         new SearchQueryQueryToolChest(null, null).getCacheStrategy(
             new SearchQuery(
@@ -67,7 +68,7 @@ public class SearchQueryQueryToolChestTest extends InitializedNullHandlingTest
         new SearchResultValue(ImmutableList.of(new SearchHit("dim1", "a")))
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(
         result
     );
 
@@ -77,7 +78,7 @@ public class SearchQueryQueryToolChestTest extends InitializedNullHandlingTest
         strategy.getCacheObjectClazz()
     );
 
-    Result<SearchResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    Result<SearchResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result, fromCacheResult);
   }

@@ -30,7 +30,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-public abstract class AbstractRedisCache implements Cache
+public abstract class AbstractRedisCache implements Cache<Cache.NamedKey,byte[]>
 {
   private static final Logger log = new Logger(AbstractRedisCache.class);
 

@@ -21,19 +21,29 @@ package org.apache.druid.client;
 
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
+import org.apache.druid.client.reusecache.CacheKey;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.CacheStrategy;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.SegmentDescriptor;
+import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.apache.druid.query.dimension.DimensionSpec;
+import org.apache.druid.query.groupby.GroupByQuery;
+import org.apache.druid.query.topn.TopNQuery;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
 
 import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class CacheUtil
 {
+  private static final byte CACHE_GROUPBY_QUERY = 0x15;
   public enum ServerType
   {
     BROKER {
@@ -93,6 +103,27 @@ public class CacheUtil
     );
   }
 
+  public static CacheKey computeReuseCacheKey(String namespace, Query query)
+  {
+    List<String> aggregatorSpecs;
+    List<String> dimensions;
+    if(query instanceof GroupByQuery){
+      GroupByQuery groupByQuery = (GroupByQuery) query;
+      aggregatorSpecs =
+          groupByQuery.getAggregatorSpecs().stream().map(AggregatorFactory::getName).collect(Collectors.toList());
+      dimensions = groupByQuery.getDimensions().stream().map(DimensionSpec::getDimension).collect(Collectors.toList());
+    }else if(query instanceof TopNQuery){
+      TopNQuery topNQuery = (TopNQuery) query;
+      aggregatorSpecs = topNQuery.getAggregatorSpecs().stream().map(AggregatorFactory::getName).collect(Collectors.toList());;
+      dimensions = Collections.singletonList(topNQuery.getDimensionSpec().getDimension());
+    }else{
+      return null;
+    }
+    String dataSource = query.getDataSource().getTableNames().stream().findFirst().get();
+    return new CacheKey(namespace, dataSource, ((BaseQuery<?>) query).getIntervals(), query.getFilter(), dimensions, aggregatorSpecs,
+                        query.getGranularity());
+  }
+
   /**
    * Returns whether the segment-level cache should be checked for a particular query.
    *
@@ -131,6 +162,18 @@ public class CacheUtil
     return isQueryCacheable(query, cacheStrategy, cacheConfig, serverType, true)
            && query.context().isPopulateCache()
            && cacheConfig.isPopulateCache();
+  }
+
+  public static <T> boolean isEnableSubQueryReuseCache(
+      Query<T> query,
+      @Nullable CacheStrategy<T, Object, Query<T>> cacheStrategy,
+      CacheConfig cacheConfig,
+      ServerType serverType
+  )
+  {
+    return isQueryCacheable(query, cacheStrategy, cacheConfig, serverType, true)
+           && query.context().isEnableReuseCache()
+           && cacheConfig.isEnableSubQueryReuse();
   }
 
   /**

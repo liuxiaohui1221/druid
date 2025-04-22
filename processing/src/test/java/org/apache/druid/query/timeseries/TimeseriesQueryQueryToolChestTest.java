@@ -59,6 +59,7 @@ public class TimeseriesQueryQueryToolChestTest
   private static final String TIMESTAMP_RESULT_FIELD_NAME = "d0";
   private static final TimeseriesQueryQueryToolChest TOOL_CHEST = new TimeseriesQueryQueryToolChest(null);
 
+  private final boolean enableSubDimensionFilterReuse=false;
   @BeforeClass
   public static void setUpClass()
   {
@@ -113,7 +114,7 @@ public class TimeseriesQueryQueryToolChestTest
         )
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(result1);
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(result1);
 
     ObjectMapper objectMapper = TestHelper.makeJsonMapper();
     Object fromCacheValue = objectMapper.readValue(
@@ -121,7 +122,7 @@ public class TimeseriesQueryQueryToolChestTest
         strategy.getCacheObjectClazz()
     );
 
-    Result<TimeseriesResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    Result<TimeseriesResultValue> fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result1, fromCacheResult);
 
@@ -138,13 +139,13 @@ public class TimeseriesQueryQueryToolChestTest
         )
     );
 
-    Object preparedResultLevelCacheValue = strategy.prepareForCache(true).apply(result2);
+    Object preparedResultLevelCacheValue = strategy.prepareForCache(true, enableSubDimensionFilterReuse).apply(result2);
     Object fromResultLevelCacheValue = objectMapper.readValue(
         objectMapper.writeValueAsBytes(preparedResultLevelCacheValue),
         strategy.getCacheObjectClazz()
     );
 
-    Result<TimeseriesResultValue> fromResultLevelCacheRes = strategy.pullFromCache(true)
+    Result<TimeseriesResultValue> fromResultLevelCacheRes = strategy.pullFromCache(true, enableSubDimensionFilterReuse)
                                                                     .apply(fromResultLevelCacheValue);
     Assert.assertEquals(result2, fromResultLevelCacheRes);
 
@@ -156,13 +157,13 @@ public class TimeseriesQueryQueryToolChestTest
         )
     );
 
-    preparedResultLevelCacheValue = strategy.prepareForCache(true).apply(result3);
+    preparedResultLevelCacheValue = strategy.prepareForCache(true, enableSubDimensionFilterReuse).apply(result3);
     fromResultLevelCacheValue = objectMapper.readValue(
         objectMapper.writeValueAsBytes(preparedResultLevelCacheValue),
         strategy.getCacheObjectClazz()
     );
 
-    fromResultLevelCacheRes = strategy.pullFromCache(true).apply(fromResultLevelCacheValue);
+    fromResultLevelCacheRes = strategy.pullFromCache(true, enableSubDimensionFilterReuse).apply(fromResultLevelCacheValue);
     Assert.assertEquals(result3, fromResultLevelCacheRes);
   }
 

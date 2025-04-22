@@ -79,6 +79,7 @@ public class SegmentMetadataQueryQueryToolChestTest
   @Test
   public void testCacheStrategy() throws Exception
   {
+    boolean enableSubDimensionFilterReuse = false;
     SegmentMetadataQuery query = new SegmentMetadataQuery(
         TEST_DATASOURCE,
         new LegacySegmentSpec("2015-01-01/2015-01-02"),
@@ -126,7 +127,7 @@ public class SegmentMetadataQueryQueryToolChestTest
         null
     );
 
-    Object preparedValue = strategy.prepareForSegmentLevelCache().apply(result);
+    Object preparedValue = strategy.prepareForSegmentLevelCache(enableSubDimensionFilterReuse).apply(result);
 
     ObjectMapper objectMapper = new DefaultObjectMapper();
     SegmentAnalysis fromCacheValue = objectMapper.readValue(
@@ -134,7 +135,7 @@ public class SegmentMetadataQueryQueryToolChestTest
         strategy.getCacheObjectClazz()
     );
 
-    SegmentAnalysis fromCacheResult = strategy.pullFromSegmentLevelCache().apply(fromCacheValue);
+    SegmentAnalysis fromCacheResult = strategy.pullFromSegmentLevelCache(enableSubDimensionFilterReuse).apply(fromCacheValue);
 
     Assert.assertEquals(result, fromCacheResult);
   }

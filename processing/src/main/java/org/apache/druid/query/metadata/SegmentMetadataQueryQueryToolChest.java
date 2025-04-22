@@ -218,13 +218,17 @@ public class SegmentMetadataQueryQueryToolChest extends QueryToolChest<SegmentAn
       }
 
       @Override
-      public Function<SegmentAnalysis, SegmentAnalysis> prepareForCache(boolean isResultLevelCache)
+      public Function<SegmentAnalysis, SegmentAnalysis> prepareForCache(boolean isResultLevelCache,
+                                                                        boolean enableSubDimensionFilterReuse
+      )
       {
         return input -> input;
       }
 
       @Override
-      public Function<SegmentAnalysis, SegmentAnalysis> pullFromCache(boolean isResultLevelCache)
+      public Function<SegmentAnalysis, SegmentAnalysis> pullFromCache(boolean isResultLevelCache,
+                                                                      boolean enableSubDimensionFilterReuse
+      )
       {
         return input -> input;
       }

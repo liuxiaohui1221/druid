@@ -34,6 +34,9 @@ public class CacheConfig
   @JsonProperty
   private boolean useCache = false;
 
+  @JsonProperty("enableSubQueryReuse")
+  private boolean enableSubQueryReuse = false;
+
   @JsonProperty
   private boolean populateCache = false;
 
@@ -52,7 +55,7 @@ public class CacheConfig
   private int cacheBulkMergeLimit = Integer.MAX_VALUE;
 
   @JsonProperty
-  private int maxEntrySize = 1_000_000;
+  private int maxEntrySize = 10_000_000;
 
   @JsonProperty
   private List<String> unCacheable = ImmutableList.of();
@@ -68,6 +71,11 @@ public class CacheConfig
   public boolean isUseCache()
   {
     return useCache;
+  }
+
+  public boolean isEnableSubQueryReuse()
+  {
+    return enableSubQueryReuse;
   }
 
   public boolean isPopulateResultLevelCache()
