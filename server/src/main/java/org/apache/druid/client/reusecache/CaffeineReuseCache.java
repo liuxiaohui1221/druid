@@ -33,19 +33,17 @@ import org.apache.druid.java.util.common.lifecycle.LifecycleStop;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
+import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.utils.JvmUtils;
+import org.eclipse.jetty.util.ConcurrentHashSet;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -60,7 +58,7 @@ public class CaffeineReuseCache implements org.apache.druid.client.cache.Cache<C
   private static final LZ4FastDecompressor LZ4_DECOMPRESSOR = LZ4_FACTORY.fastDecompressor();
   private static final LZ4Compressor LZ4_COMPRESSOR = LZ4_FACTORY.fastCompressor();
 
-  private final Cache<String,CopyOnWriteArrayList<CacheKey>> dimensionToKeys;
+  private final Cache<String, ConcurrentHashMap.KeySetView<CacheKey,Boolean>> dimensionToKeys;
   private final Cache<CacheKey, byte[]> cache;
   private final AtomicReference<CacheStats> priorStats = new AtomicReference<>(CacheStats.empty());
   private final CaffeineCacheConfig config;
@@ -98,7 +96,7 @@ public class CaffeineReuseCache implements org.apache.druid.client.cache.Cache<C
 //    Cache<String, List<String>> builder =
 //        Caffeine.newBuilder().maximumSize(10_000).build((String key)->new ArrayList<>());
     this.dimensionToKeys =
-        Caffeine.newBuilder().maximumSize(config.getMaxDims()).build((String key)->new CopyOnWriteArrayList<>());
+        Caffeine.newBuilder().maximumSize(config.getMaxDims()).build((String key)->ConcurrentHashMap.newKeySet());
   }
 
   @Override
@@ -110,24 +108,26 @@ public class CaffeineReuseCache implements org.apache.druid.client.cache.Cache<C
   @Override
   public void put(CacheKey key, byte[] value)
   {
-    log.info("Put cache key: %s", key);
-    cache.put(key, serialize(value));
-    CopyOnWriteArrayList<CacheKey> ifPresent = dimensionToKeys.getIfPresent(key.namespace);
+    byte[] serValue = serialize(value);
+    log.info("Put cache key: %s,bytes:%s", key.namespace,serValue.length);
+    long start=System.currentTimeMillis();
+    cache.put(key, serValue);
+    ConcurrentHashMap.KeySetView<CacheKey, Boolean> ifPresent = dimensionToKeys.getIfPresent(key.namespace);
     if(ifPresent != null) {
       ifPresent.add(key);
     }else{
-      CopyOnWriteArrayList<CacheKey> cachedKeys = new CopyOnWriteArrayList<>();
+      ConcurrentHashMap.KeySetView<CacheKey, Boolean> cachedKeys = ConcurrentHashMap.newKeySet();
       cachedKeys.add(key);
       dimensionToKeys.put(key.namespace, cachedKeys);
     }
   }
 
   @Override
-  public List<CacheKey> getDimensionToKeys(String namespace)
+  public Set<CacheKey> getDimensionToKeys(String namespace)
   {
-    CopyOnWriteArrayList<CacheKey> cachedKeys=this.dimensionToKeys.getIfPresent(namespace);
+    ConcurrentHashMap.KeySetView<CacheKey, Boolean> cachedKeys=this.dimensionToKeys.getIfPresent(namespace);
     if(cachedKeys==null){
-      return Collections.emptyList();
+      return Collections.emptySet();
     }
     return cachedKeys;
   }
@@ -230,74 +230,5 @@ public class CaffeineReuseCache implements org.apache.druid.client.cache.Cache<C
                      .putInt(value.length)
                      .put(out, 0, compressedSize)
                      .array();
-  }
-  /*private byte[] serialize(CachedResult value)
-  {
-    try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
-         DataOutputStream dos = new DataOutputStream(bos)) {
-      // 1. 序列化基础字段
-      writeStringList(dos, value.getOriginalDimensions());  // 写入维度列表
-      writeStringList(dos, value.getAggregatorNames());     // 写入聚合器名称
-      dos.writeLong(value.getInterval().getStartMillis());  // 写入时间范围
-      dos.writeLong(value.getInterval().getEndMillis());
-
-      // 2. 序列化分组数据
-      dos.writeInt(value.getGroupedData().size());
-      for (Map.Entry<DimensionKey, AggregatedValue> entry : value.getGroupedData().entrySet()) {
-        // 序列化DimensionKey
-        byte[] dimKeyBytes = serializeDimensionKey(entry.getKey());
-        dos.writeInt(dimKeyBytes.length);
-        dos.write(dimKeyBytes);
-
-        // 序列化AggregatedValue
-        // 将对象写入ObjectOutputStream
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
-        objectOutputStream.writeObject(entry.getValue());
-        objectOutputStream.close();
-        byte[] aggByteArray = byteArrayOutputStream.toByteArray();
-
-        dos.writeInt(aggByteArray.length);
-        dos.write(dimKeyBytes);
-      }
-
-      // 3. LZ4压缩
-      byte[] rawData = bos.toByteArray();
-      int maxCompressedSize = LZ4_COMPRESSOR.maxCompressedLength(rawData.length);
-      byte[] compressed = new byte[maxCompressedSize];
-      int compressedSize = LZ4_COMPRESSOR.compress(rawData, 0, rawData.length, compressed, 0, maxCompressedSize);
-      return Arrays.copyOfRange(compressed, 0, compressedSize);
-    }
-    catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-  }*/
-
-  // 辅助方法：写入字符串列表
-  private static void writeStringList(DataOutputStream dos, List<String> list) throws IOException
-  {
-    dos.writeInt(list.size());
-    for (String s : list) {
-      dos.writeUTF(s);
-    }
-  }
-
-  // 辅助方法：读取字符串列表
-  private static List<String> readStringList(DataInputStream dis) throws IOException {
-    int size = dis.readInt();
-    List<String> list = new ArrayList<>(size);
-    for (int i = 0; i < size; ++i) {
-      list.add(dis.readUTF());
-    }
-    return list;
-  }
-
-  // 辅助方法：序列化DimensionKey
-  private byte[] serializeDimensionKey(DimensionKey key) throws IOException {
-    try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
-         ObjectOutputStream oos = new ObjectOutputStream(bos)) {
-      oos.writeObject(key.getDimensions());
-      return bos.toByteArray();
-    }
   }
 }

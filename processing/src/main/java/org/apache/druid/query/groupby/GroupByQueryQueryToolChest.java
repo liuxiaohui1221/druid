@@ -35,6 +35,7 @@ import com.google.common.base.Supplier;
 import com.google.common.collect.Lists;
 import com.google.inject.Inject;
 import org.apache.druid.data.input.Row;
+import org.apache.druid.data.input.impl.DimensionsSpec;
 import org.apache.druid.error.DruidException;
 import org.apache.druid.frame.Frame;
 import org.apache.druid.frame.FrameType;
@@ -44,6 +45,7 @@ import org.apache.druid.frame.write.FrameWriterFactory;
 import org.apache.druid.frame.write.FrameWriterUtils;
 import org.apache.druid.frame.write.FrameWriters;
 import org.apache.druid.guice.annotations.Merging;
+import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.granularity.Granularity;
@@ -52,6 +54,7 @@ import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;
 import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.java.util.common.jackson.JacksonUtils;
+import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.CacheStrategy;
 import org.apache.druid.query.DataSource;
 import org.apache.druid.query.FrameSignaturePair;
@@ -67,23 +70,37 @@ import org.apache.druid.query.aggregation.Aggregator;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.aggregation.MetricManipulationFn;
 import org.apache.druid.query.aggregation.MetricManipulatorFns;
+import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.query.cache.CacheKeyBuilder;
+import org.apache.druid.query.cache.SubQueryCacheKey;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
 import org.apache.druid.query.dimension.DimensionSpec;
 import org.apache.druid.query.extraction.ExtractionFn;
+import org.apache.druid.query.topn.TopNQuery;
 import org.apache.druid.segment.Cursor;
 import org.apache.druid.segment.DimensionHandlerUtils;
 import org.apache.druid.segment.StringDimensionDictionary;
 import org.apache.druid.segment.column.RowSignature;
+import org.apache.druid.segment.incremental.IncrementalIndex;
+import org.apache.druid.segment.incremental.IncrementalIndexRow;
+import org.apache.druid.segment.incremental.IncrementalIndexSchema;
+import org.apache.druid.segment.incremental.IndexSizeExceededException;
+import org.apache.druid.segment.incremental.OnheapIncrementalIndex;
 import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.joda.time.Interval;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -93,26 +110,28 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BinaryOperator;
+import java.util.stream.Collectors;
 
 /**
  * Toolchest for GroupBy queries
  */
 public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupByQuery>
 {
-  private static final byte GROUPBY_QUERY = 0x14;
-  private static final TypeReference<Object> OBJECT_TYPE_REFERENCE =
+  public static final byte GROUPBY_QUERY = 0x14;
+  public static final TypeReference<Object> OBJECT_TYPE_REFERENCE =
       new TypeReference<Object>()
       {
       };
   private static final TypeReference<ResultRow> TYPE_REFERENCE = new TypeReference<ResultRow>()
   {
   };
+  private static final Logger log = LoggerFactory.getLogger(GroupByQueryQueryToolChest.class);
 
   private final GroupingEngine groupingEngine;
   private final GroupByQueryConfig queryConfig;
   private final GroupByQueryMetricsFactory queryMetricsFactory;
   private final GroupByResourcesReservationPool groupByResourcesReservationPool;
-  private final ConcurrentHashMap<String, StringDimensionDictionary> dataSourceDimDictionaryMap = new ConcurrentHashMap<>();
+
 
   @VisibleForTesting
   public GroupByQueryQueryToolChest(
@@ -563,11 +582,12 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
 
 
       @Override
-      public boolean isCacheable(GroupByQuery query, boolean willMergeRunners, boolean bySegment)
+      public boolean isCacheable(GroupByQuery query, boolean willMergeRunners, boolean bySegment, boolean enableSubQueryReuse)
       {
         //disable segment-level cache on borker,
-        //see PR https://github.com/apache/druid/issues/3820
-        return willMergeRunners || !bySegment;
+        //see PR https://github.com/apache/druid/issues/3820  --fixed
+        //return willMergeRunners || !bySegment;
+        return enableSubQueryReuse;
       }
 
       @Override
@@ -584,6 +604,16 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
           builder.appendCacheable(query.getLimitSpec());
         }
         return builder.build();
+      }
+      @Override
+      public CacheKey computeSubQueryCacheKey(String namespace, GroupByQuery query)
+      {
+        List<String> aggregatorSpecs =
+              query.getAggregatorSpecs().stream().map(AggregatorFactory::getName).collect(Collectors.toList());
+        List<String> dimensions = query.getDimensions().stream().map(DimensionSpec::getDimension).collect(Collectors.toList());
+        String dataSource = query.getDataSource().getTableNames().stream().findFirst().get();
+        return new SubQueryCacheKey(namespace, dataSource, query.getIntervals(), query.getFilter(), dimensions, aggregatorSpecs,
+                                    query.getGranularity());
       }
 
       @Override
@@ -650,6 +680,12 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
             return retVal;
           }
         };
+      }
+
+      @Override
+      public List<String> extractSubDimensions(Query<ResultRow> query)
+      {
+        return ((GroupByQuery) query).getDimensions().stream().map(DimensionSpec::getDimension).collect(Collectors.toList());
       }
 
       private Function<ResultRow, Object> prepareForCacheReuseFunction(
@@ -780,9 +816,14 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
           public ResultRow apply(Object input)
           {
             List<Object> results = (List<Object>) input;
-
-            DateTime timestamp =
-                granularity.toDateTime(((Number) results.get(0)).longValue());
+            DateTime timestamp;
+            if(results.get(0) instanceof Number){
+              timestamp =granularity.toDateTime(((Number) results.get(0)).longValue());
+            }else if(results.get(0) instanceof String){
+              timestamp = granularity.bucketStart(DateTimes.of(results.get(0).toString()));
+            }else{
+              throw new ISE("timestamp type error!");
+            }
             //判断时间是否在intervals范围内
             boolean flag= false;
             for(Interval interval : intervals) {
@@ -841,67 +882,34 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
 
       @Override
       public Sequence<ResultRow> reAggregateCacheSequence(
-          Sequence<ResultRow> originalResult,
-          List<String> subDimensions
+          Sequence<ResultRow> originalResult
       )
       {
-        // 初始化累加器
-        SubDimensionAccumulator accumulator = new SubDimensionAccumulator(
-            subDimensions,
-            query.getAggregatorSpecs().toArray(new AggregatorFactory[0])
-        );
+        long start = System.currentTimeMillis();
         Granularity granularity = query.getGranularity();
-        final int dimensionStart = query.getResultRowDimensionStart();
-        final int aggregatorStart = query.getResultRowAggregatorStart();
-        final int size = query.getResultRowSizeWithoutPostAggregators();
-
-        final boolean resultRowHasTimestamp = query.getResultRowHasTimestamp();
-        originalResult.flatMap(row -> {
-
-          // 提取子维度值作为新分组键
-          Map<String, Object> subKey = extractSubDimensions(row, subDimensions, dimensionStart);
-          if (resultRowHasTimestamp) {
-            long truncate_time = granularity.bucketStart(row.getLong(0));
-            subKey.put("__time", truncate_time);
+        List<String> dimOutputNames = query.getDimensions().stream().map(DimensionSpec::getOutputName).collect(Collectors.toList());
+        final IncrementalIndexSchema incrementalIndexSchema =
+            new IncrementalIndexSchema.Builder().withQueryGranularity(granularity)
+                .withMetrics(query.getAggregatorSpecs().toArray(new AggregatorFactory[0]))
+                                                .withDimensionsSpec(new DimensionsSpec.Builder()
+                                                                        .setDefaultSchemaDimensions(dimOutputNames).build())
+                                                .build();
+        IncrementalIndex incrementalIndex =
+            new OnheapIncrementalIndex.Builder().setIndexSchema(incrementalIndexSchema).setMaxRowCount(1000000).build();
+        originalResult.map(row -> {
+          try {
+            incrementalIndex.add(row.toMapBasedInputRow(query),true);
           }
-          // 合并到累加器（内存维护分组状态）
-          mergeIntoAccumulator(subKey, row, accumulator, aggregatorStart);
-          return Sequences.empty();
+          catch (IndexSizeExceededException e) {
+            log.error("Index size exceeded!!!",e);
+            throw new RuntimeException(e);
+          }
+          return null;
         }).toList();
-        // 3. 将累加器的最终结果转换为Sequence
-        return Sequences.simple(accumulator.toRows(size,dimensionStart,aggregatorStart));
-      }
-
-      private void mergeIntoAccumulator(
-          Map<String, Object> subKey,
-          ResultRow parentRow,
-          SubDimensionAccumulator accumulator,
-          int aggregatorStart
-      ) {
-        Aggregator[] aggregators = accumulator.getOrCreateAggregators(subKey);
-        for (int i = 0; i < aggregators.length; i++) {
-          Object parentValue = parentRow.get(aggregatorStart+i);
-          // 1. 获取绑定到该聚合器的可变列选择器
-          MutableObjectColumnSelector selector = accumulator.getSelectorForAggregator(aggregators[i]);
-
-          // 2. 设置父维度的聚合值
-          selector.setValue(parentValue);
-
-          // 3. 调用无参数 aggregate() 方法，此时会从 selector 中读取 parentValue
-          aggregators[i].aggregate();
-
-          // 4. 重置选择器
-          selector.setValue(null);
-        }
-      }
-
-      // 提取子维度值的辅助方法
-      private Map<String, Object> extractSubDimensions(ResultRow row, List<String> subDims, int dimensionStart) {
-        Map<String, Object> key = new HashMap<>();
-        for (int i=0;i<subDims.size();i++) {
-          key.put(subDims.get(i), row.get(dimensionStart+i));
-        }
-        return key;
+        log.info("reAggregateCacheSequence cost:{}ms",System.currentTimeMillis()-start);
+        return Sequences.simple(incrementalIndex.iterableWithPostAggregations(query.getPostAggregatorSpecs(),
+                                                                              query.isDescending()))
+                        .map(row -> ResultRow.fromLegacyRow(row,query));
       }
     };
   }

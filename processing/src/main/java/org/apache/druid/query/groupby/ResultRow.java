@@ -21,6 +21,7 @@ package org.apache.druid.query.groupby;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import org.apache.druid.data.input.MapBasedInputRow;
 import org.apache.druid.data.input.MapBasedRow;
 import org.apache.druid.data.input.Row;
 import org.apache.druid.query.aggregation.AggregatorFactory;
@@ -33,6 +34,7 @@ import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Used by {@link GroupByQuery} for results. Each row is positional, and has the following fields, in order:
@@ -184,6 +186,20 @@ public final class ResultRow
     }
 
     return new MapBasedRow(timestamp, toMap(query));
+  }
+  public MapBasedInputRow toMapBasedInputRow(final GroupByQuery query)
+  {
+    // May be null, if so it'll get replaced later
+    final DateTime timestamp;
+
+    if (query.getResultRowHasTimestamp()) {
+      timestamp = query.getGranularity().toDateTime(getLong(0));
+    } else {
+      timestamp = query.getUniversalTimestamp();
+    }
+
+    return new MapBasedInputRow(timestamp, query.getDimensions().stream().map(dim->dim.getOutputName()).collect(
+        Collectors.toList()), toMap(query));
   }
 
   @Override

@@ -30,6 +30,7 @@ import org.apache.druid.guice.annotations.ExtensionPoint;
 import org.apache.druid.java.util.common.UOE;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.query.aggregation.MetricManipulationFn;
+import org.apache.druid.segment.StringDimensionDictionary;
 import org.apache.druid.segment.column.RowSignature;
 import org.apache.druid.timeline.LogicalSegment;
 
@@ -37,6 +38,7 @@ import javax.annotation.Nullable;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BinaryOperator;
 
 /**
@@ -47,6 +49,8 @@ public abstract class QueryToolChest<ResultType, QueryType extends Query<ResultT
 {
   private final JavaType baseResultType;
   private final JavaType bySegmentResultType;
+  protected final ConcurrentHashMap<String, StringDimensionDictionary> dataSourceDimDictionaryMap =
+      new ConcurrentHashMap<>();
 
   protected QueryToolChest()
   {

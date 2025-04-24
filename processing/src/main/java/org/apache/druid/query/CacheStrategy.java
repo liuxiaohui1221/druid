@@ -25,6 +25,7 @@ import org.apache.druid.guice.annotations.ExtensionPoint;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.segment.StringDimensionDictionary;
 import org.apache.druid.segment.column.ColumnType;
 
@@ -48,12 +49,15 @@ public interface CacheStrategy<T, CacheType, QueryType extends Query<T>>
    *
    * @param ignoredQuery            the query to be cached
    * @param ignoredWillMergeRunners indicates that {@link QueryRunnerFactory#mergeRunners(QueryProcessingPool, Iterable)} will be
-   *                         called on the cached by-segment results
-   *
+   *                                called on the cached by-segment results
+   * @param bySegment
+   * @param enableSubQueryReuse
    * @return true if the query is cacheable, otherwise false.
    */
-  @Deprecated
-  default boolean isCacheable(QueryType ignoredQuery, boolean ignoredWillMergeRunners)
+  default boolean isCacheable(QueryType ignoredQuery, boolean ignoredWillMergeRunners,
+                              boolean bySegment,
+                              boolean enableSubQueryReuse
+  )
   {
     return false;
   }
@@ -71,7 +75,7 @@ public interface CacheStrategy<T, CacheType, QueryType extends Query<T>>
    */
   default boolean isCacheable(QueryType query, boolean willMergeRunners, boolean bySegment)
   {
-    return isCacheable(query, willMergeRunners);
+    return isCacheable(query, willMergeRunners, bySegment, false);
   }
 
   /**
@@ -84,7 +88,7 @@ public interface CacheStrategy<T, CacheType, QueryType extends Query<T>>
    * @return the per-segment cache key
    */
   byte[] computeCacheKey(QueryType query);
-
+  default CacheKey computeSubQueryCacheKey(String namespace, QueryType query){return null;};
   /**
    * Computes the result-level cache key for the given query. The result-level cache will tack on datasource and
    * interval details, so this key does not need to include datasource and interval. But it should include anything
@@ -198,12 +202,13 @@ public interface CacheStrategy<T, CacheType, QueryType extends Query<T>>
     }
   }
 
-  default Sequence<T> reAggregateCacheSequence(Sequence<T> originalResult,
-      List<String> subDimensions
+  default Sequence<T> reAggregateCacheSequence(Sequence<T> originalResult
   )
   {
     return originalResult;
   }
+
+   default List<String> extractSubDimensions(Query<T> query){return null;};
 
   interface AddToResultFunction
   {

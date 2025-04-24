@@ -42,6 +42,7 @@ import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.query.BadJsonQueryException;
 import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.Query;
+import org.apache.druid.query.QueryContext;
 import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryException;
 import org.apache.druid.query.QueryInterruptedException;
@@ -146,10 +147,15 @@ public class QueryResource implements QueryCountStatsProvider
     if (!(baseQuery instanceof BaseQuery)) {
       return baseQuery;
     }
+    boolean enableMv=baseQuery.context().getBoolean(QueryContexts.CTX_KEY_ENABLE_MATERIALIZED_VIEW,
+                                   QueryContexts.DEFAULT_ENABLE_MATERIALIZED_VIEW);
+    if(!enableMv){
+      return baseQuery;
+    }
     boolean materializedViewQuery = DerivativeDataSourceManager.isMaterializedViewQuery(baseQuery);
     if (!materializedViewQuery) {
-      log.info("Materialized view query detected, converting to MaterializedViewQuery:[%s],node:%s",
-               baseQuery.getDataSource(),selfNode.getServiceName());
+//      log.info("Materialized view query detected, converting to MaterializedViewQuery:[%s],node:%s",
+//               baseQuery.getDataSource(),selfNode.getServiceName());
 //      if(selfNode.getServiceName().equalsIgnoreCase("druid/middleManager")){
 //        return new MaterializedViewQuery.Builder().query((BaseQuery) baseQuery).optimizer(mvOptimizer).build();
 //      }

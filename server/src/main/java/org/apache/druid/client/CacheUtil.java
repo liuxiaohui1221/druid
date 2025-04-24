@@ -21,29 +21,69 @@ package org.apache.druid.client;
 
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
-import org.apache.druid.client.reusecache.CacheKey;
 import org.apache.druid.java.util.common.StringUtils;
-import org.apache.druid.query.BaseQuery;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.CacheStrategy;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.SegmentDescriptor;
-import org.apache.druid.query.aggregation.AggregatorFactory;
-import org.apache.druid.query.dimension.DimensionSpec;
-import org.apache.druid.query.groupby.GroupByQuery;
-import org.apache.druid.query.topn.TopNQuery;
+import org.apache.druid.query.cache.CacheKey;
+import org.apache.druid.query.cache.SubQueryCacheKey;
+import org.apache.druid.query.filter.DimFilter;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 public class CacheUtil
 {
   private static final byte CACHE_GROUPBY_QUERY = 0x15;
+
+  public static <T> SubQueryCacheKey findParentKey(Cache cache,Query<T> query, String namespace,
+                                                   List<String> subDimensions) {
+    Interval queryInterval = query.getIntervals().get(0);
+    Granularity queryGranularity = query.getGranularity();
+    DimFilter queryFilter = query.getFilter();
+    Set<CacheKey> parentKeys = cache.getDimensionToKeys(namespace);
+    for(CacheKey parentKey : parentKeys){
+      if(parentKey instanceof SubQueryCacheKey){
+        SubQueryCacheKey parentSubKey = (SubQueryCacheKey) parentKey;
+        //比较粒度
+        if (queryGranularity.isFinerThan(parentSubKey.getGranularity())){
+          continue;
+        }
+        //比较时间范围
+        if (!parentSubKey.getIntervals().get(0).contains(queryInterval)){
+          continue;
+        }
+        //比较维度
+        if (!parentSubKey.getDimensions().containsAll(subDimensions)){
+          continue;
+        }
+        //比较过滤条件
+        if (!isFilterCompatible(parentSubKey.getFilter(), queryFilter)){
+          continue;
+        }
+        return parentSubKey;
+      }
+    }
+    return null;
+  }
+
+  // 检查父过滤条件是否被当前查询过滤条件覆盖
+  static boolean isFilterCompatible(DimFilter parentFilter, DimFilter subFilter) {
+    // 实现逻辑：判断subFilter是否比parentFilter更严格，例如：
+    // parentFilter是"dim1='a'"，subFilter是"dim1='a' AND dim2='b'"
+    // 需要确保subFilter逻辑蕴含parentFilter（此处需自定义逻辑或使用表达式推导）
+    if(parentFilter == null) {
+      return true;
+    }
+    return parentFilter.equals(subFilter); // 简化实现，实际需深度解析Filter结构
+  }
+
   public enum ServerType
   {
     BROKER {
@@ -74,7 +114,7 @@ public class CacheUtil
 
   public static void populateResultCache(
       Cache cache,
-      Cache.NamedKey key,
+      CacheKey key,
       byte[] resultBytes
   )
   {
@@ -103,26 +143,6 @@ public class CacheUtil
     );
   }
 
-  public static CacheKey computeReuseCacheKey(String namespace, Query query)
-  {
-    List<String> aggregatorSpecs;
-    List<String> dimensions;
-    if(query instanceof GroupByQuery){
-      GroupByQuery groupByQuery = (GroupByQuery) query;
-      aggregatorSpecs =
-          groupByQuery.getAggregatorSpecs().stream().map(AggregatorFactory::getName).collect(Collectors.toList());
-      dimensions = groupByQuery.getDimensions().stream().map(DimensionSpec::getDimension).collect(Collectors.toList());
-    }else if(query instanceof TopNQuery){
-      TopNQuery topNQuery = (TopNQuery) query;
-      aggregatorSpecs = topNQuery.getAggregatorSpecs().stream().map(AggregatorFactory::getName).collect(Collectors.toList());;
-      dimensions = Collections.singletonList(topNQuery.getDimensionSpec().getDimension());
-    }else{
-      return null;
-    }
-    String dataSource = query.getDataSource().getTableNames().stream().findFirst().get();
-    return new CacheKey(namespace, dataSource, ((BaseQuery<?>) query).getIntervals(), query.getFilter(), dimensions, aggregatorSpecs,
-                        query.getGranularity());
-  }
 
   /**
    * Returns whether the segment-level cache should be checked for a particular query.
@@ -172,7 +192,7 @@ public class CacheUtil
   )
   {
     return isQueryCacheable(query, cacheStrategy, cacheConfig, serverType, true)
-           && query.context().isEnableReuseCache()
+           && query.context().isEnableSubQueryReuse()
            && cacheConfig.isEnableSubQueryReuse();
   }
 
@@ -235,7 +255,7 @@ public class CacheUtil
   )
   {
     return cacheStrategy != null
-           && cacheStrategy.isCacheable(query, serverType.willMergeRunners(), bySegment)
+           && cacheStrategy.isCacheable(query, serverType.willMergeRunners(), bySegment, cacheConfig.isEnableSubQueryReuse())
            && cacheConfig.isQueryCacheable(query)
            && query.getDataSource().isCacheable(serverType == ServerType.BROKER);
   }

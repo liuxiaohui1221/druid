@@ -39,6 +39,7 @@ import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;
+import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.BySegmentResultValue;
 import org.apache.druid.query.CacheStrategy;
 import org.apache.druid.query.FrameSignaturePair;
@@ -56,23 +57,31 @@ import org.apache.druid.query.aggregation.AggregatorUtil;
 import org.apache.druid.query.aggregation.MetricManipulationFn;
 import org.apache.druid.query.aggregation.MetricManipulatorFns;
 import org.apache.druid.query.aggregation.PostAggregator;
+import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.query.cache.CacheKeyBuilder;
+import org.apache.druid.query.cache.SubQueryCacheKey;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
 import org.apache.druid.query.dimension.DimensionSpec;
+import org.apache.druid.query.groupby.GroupByQuery;
+import org.apache.druid.query.groupby.ResultRow;
 import org.apache.druid.segment.Cursor;
 import org.apache.druid.segment.DimensionHandlerUtils;
+import org.apache.druid.segment.StringDimensionDictionary;
 import org.apache.druid.segment.column.RowSignature;
 import org.joda.time.DateTime;
+import org.joda.time.Interval;
 
 import java.io.Closeable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  *
@@ -310,6 +319,23 @@ public class TopNQueryQueryToolChest extends QueryToolChest<Result<TopNResultVal
       }
 
       @Override
+      public List<String> extractSubDimensions(Query<Result<TopNResultValue>> query)
+      {
+        return Collections.singletonList(((TopNQuery) query).getDimensionSpec().getDimension());
+      }
+
+      @Override
+      public CacheKey computeSubQueryCacheKey(String namespace, TopNQuery topNQuery)
+      {
+        List<String> aggregatorSpecs = topNQuery.getAggregatorSpecs().stream().map(AggregatorFactory::getName).collect(Collectors.toList());;
+        List<String> dimensions = Collections.singletonList(topNQuery.getDimensionSpec().getDimension());
+        String dataSource = query.getDataSource().getTableNames().stream().findFirst().get();
+        return new SubQueryCacheKey(namespace, dataSource, query.getIntervals(), query.getFilter(), dimensions,
+                                    aggregatorSpecs,
+                                    query.getGranularity());
+      }
+
+      @Override
       public byte[] computeResultLevelCacheKey(TopNQuery query)
       {
         final CacheKeyBuilder builder = new CacheKeyBuilder(TOPN_QUERY)
@@ -364,7 +390,6 @@ public class TopNQueryQueryToolChest extends QueryToolChest<Result<TopNResultVal
           }
         };
       }
-
       @Override
       public Function<Object, Result<TopNResultValue>> pullFromCache(boolean isResultLevelCache,
                                                                      boolean enableSubDimensionFilterReuse

@@ -24,7 +24,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.google.common.base.Preconditions;
 import org.apache.commons.lang.mutable.MutableBoolean;
-import org.apache.druid.client.reusecache.CacheKey;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.SequenceWrapper;
 import org.apache.druid.java.util.common.guava.Sequences;
@@ -84,7 +83,7 @@ public class ForegroundCachePopulator implements CachePopulator
           if (!tooBig.isTrue()) {
             try {
               JacksonUtils.writeObjectUsingSerializerProvider(jsonGenerator, serializers, cacheFn.apply(input));
-
+              log.info("Current cached bytes: %s", bytes.size());
               // Not flushing jsonGenerator before checking this, but should be ok since Jackson buffers are
               // typically just a few KB, and we don't want to waste cycles flushing.
               if (maxEntrySize > 0 && bytes.size() > maxEntrySize) {

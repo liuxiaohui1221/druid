@@ -245,7 +245,7 @@ public class DerivativeDataSourceManager
                                String dataSource = derivatives.lhs;
                                DerivativeDataSourceMetadata metadata = derivatives.rhs;
                                String baseDataSource = metadata.getBaseDataSource();
-                               log.info(
+                               log.debug(
                                    "find derivatives: {bases=%s, derivative=%s, granularity=%s}",
                                    baseDataSource, dataSource, metadata.getGranularitySpec()
                                );
@@ -263,7 +263,6 @@ public class DerivativeDataSourceManager
 
     ConcurrentHashMap<String, HashMap<String, DerivativeDataSource>> newDerivatives = groupAndSortedByGranularity(
         derivativeDataSources);
-    log.debug("update derivatives: {%s}", newDerivatives);
     ConcurrentHashMap<String, HashMap<String, DerivativeDataSource>> current;
     do {
       current = DERIVATIVES_REF.get();

@@ -35,6 +35,7 @@ import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.primitives.Bytes;
 import com.google.inject.Inject;
+import io.vavr.Tuple3;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
 import org.apache.druid.client.cache.CachePopulator;
@@ -70,13 +71,17 @@ import org.apache.druid.query.QuerySegmentWalker;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.QueryToolChestWarehouse;
 import org.apache.druid.query.Result;
+import org.apache.druid.query.ResultLevelCachingQueryRunner;
 import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.aggregation.MetricManipulatorFns;
+import org.apache.druid.query.cache.CacheKey;
+import org.apache.druid.query.cache.SubQueryCacheKey;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.filter.DimFilterUtils;
 import org.apache.druid.query.planning.DataSourceAnalysis;
 import org.apache.druid.query.spec.MultipleSpecificSegmentSpec;
 import org.apache.druid.query.spec.QuerySegmentSpec;
+import org.apache.druid.server.ClientQuerySegmentWalker;
 import org.apache.druid.server.QueryResource;
 import org.apache.druid.server.QueryScheduler;
 import org.apache.druid.server.coordination.DruidServerMetadata;
@@ -114,7 +119,7 @@ import java.util.stream.Collectors;
 /**
  * This is the class on the Broker that is responsible for making native Druid queries to a cluster of data servers.
  *
- * The main user of this class is {@link org.apache.druid.server.ClientQuerySegmentWalker}. In tests, its behavior
+ * The main user of this class is {@link ClientQuerySegmentWalker}. In tests, its behavior
  * is partially mimicked by TestClusterQuerySegmentWalker.
  */
 public class CachingClusteredClient implements QuerySegmentWalker
@@ -297,9 +302,10 @@ public class CachingClusteredClient implements QuerySegmentWalker
     private final CacheStrategy<T, Object, Query<T>> strategy;
     private final boolean useCache;
     private final boolean populateCache;
+    private final boolean enableSubQueryReuse;
     private final boolean isBySegment;
     private final int uncoveredIntervalsLimit;
-    private final Map<String, Cache.NamedKey> cachePopulatorKeyMap = new HashMap<>();
+    private final Map<String, CacheKey> cachePopulatorKeyMap = new HashMap<>();
     private final DataSourceAnalysis dataSourceAnalysis;
     private final List<Interval> intervals;
     private final CacheKeyManager<T> cacheKeyManager;
@@ -315,6 +321,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
 
       this.useCache = CacheUtil.isUseSegmentCache(query, strategy, cacheConfig, CacheUtil.ServerType.BROKER);
       this.populateCache = CacheUtil.isPopulateSegmentCache(query, strategy, cacheConfig, CacheUtil.ServerType.BROKER);
+      this.enableSubQueryReuse = CacheUtil.isEnableSubQueryReuseCache(query, strategy, cacheConfig, CacheUtil.ServerType.BROKER);
       final QueryContext queryContext = query.context();
       this.isBySegment = queryContext.isBySegment();
       // Note that enabling this leads to putting uncovered intervals information in the response headers
@@ -378,7 +385,6 @@ public class CachingClusteredClient implements QuerySegmentWalker
       if (uncoveredIntervalsLimit > 0) {
         computeUncoveredIntervals(timeline);
       }
-
       final Set<SegmentServerSelector> segmentServers = computeSegmentsToQuery(timeline, specificSegments);
       @Nullable
       final byte[] queryCacheKey = cacheKeyManager.computeSegmentLevelQueryCacheKey();
@@ -395,7 +401,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
         }
       }
 
-      final List<Pair<Interval, byte[]>> alreadyCachedResults =
+      final List<Tuple3<Interval, byte[],Boolean>> alreadyCachedResults =
           pruneSegmentsWithCachedResults(queryCacheKey, segmentServers);
 
       query = scheduler.prioritizeAndLaneQuery(queryPlus, segmentServers);
@@ -554,7 +560,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
       }
     }
 
-    private List<Pair<Interval, byte[]>> pruneSegmentsWithCachedResults(
+    private List<Tuple3<Interval, byte[],Boolean>> pruneSegmentsWithCachedResults(
         final byte[] queryCacheKey,
         final Set<SegmentServerSelector> segments
     )
@@ -562,50 +568,74 @@ public class CachingClusteredClient implements QuerySegmentWalker
       if (queryCacheKey == null) {
         return Collections.emptyList();
       }
-      final List<Pair<Interval, byte[]>> alreadyCachedResults = new ArrayList<>();
-      Map<SegmentServerSelector, Cache.NamedKey> perSegmentCacheKeys = computePerSegmentCacheKeys(
+      final List<Tuple3<Interval, byte[], Boolean>> alreadyCachedResults = new ArrayList<>();
+      Map<SegmentServerSelector, CacheKey> perSegmentCacheKeys = computePerSegmentCacheKeys(
           segments,
           queryCacheKey
       );
       // Pull cached segments from cache and remove from set of segments to query
-      final Map<Cache.NamedKey, byte[]> cachedValues = computeCachedValues(perSegmentCacheKeys);
+      final Map<CacheKey, byte[]> cachedValues = computeCachedValues(perSegmentCacheKeys);
 
       perSegmentCacheKeys.forEach((segment, segmentCacheKey) -> {
         final Interval segmentQueryInterval = segment.getSegmentDescriptor().getInterval();
-
-        final byte[] cachedValue = cachedValues.get(segmentCacheKey);
+        Boolean hitPartial = null;
+        byte[] cachedValue = cachedValues.get(segmentCacheKey);
+        if(enableSubQueryReuse && cachedValue==null){
+          List<String> subDimensions=strategy.extractSubDimensions(query);
+          CacheKey parentCacheKey = CacheUtil.findParentKey(cache,query,
+                                                    segment.getServer().getSegment().getId().toString(), subDimensions);
+          cachedValue = parentCacheKey==null?null:cache.get(parentCacheKey);
+          if(cachedValue!=null){
+            log.info("Partial cache hit for query: %s,%s,hit parentCacheKey:%s", query.getDataSource(),
+                     query.getIntervals()
+                ,parentCacheKey);
+            hitPartial=true;
+          }
+        }
         if (cachedValue != null) {
+          if(hitPartial==null){
+            hitPartial=false;
+          }
           // remove cached segment from set of segments to query
           segments.remove(segment);
-          alreadyCachedResults.add(Pair.of(segmentQueryInterval, cachedValue));
+          alreadyCachedResults.add(new Tuple3(segmentQueryInterval, cachedValue, hitPartial));
         } else if (populateCache) {
           // otherwise, if populating cache, add segment to list of segments to cache
           final SegmentId segmentId = segment.getServer().getSegment().getId();
+
           addCachePopulatorKey(segmentCacheKey, segmentId, segmentQueryInterval);
         }
       });
       return alreadyCachedResults;
     }
 
-    private Map<SegmentServerSelector, Cache.NamedKey> computePerSegmentCacheKeys(
+    private Map<SegmentServerSelector, CacheKey> computePerSegmentCacheKeys(
         Set<SegmentServerSelector> segments,
         byte[] queryCacheKey
     )
     {
       // cacheKeys map must preserve segment ordering, in order for shards to always be combined in the same order
-      Map<SegmentServerSelector, Cache.NamedKey> cacheKeys = Maps.newLinkedHashMap();
+      Map<SegmentServerSelector, CacheKey> cacheKeys = Maps.newLinkedHashMap();
       for (SegmentServerSelector segmentServer : segments) {
-        final Cache.NamedKey segmentCacheKey = CacheUtil.computeSegmentCacheKey(
-            segmentServer.getServer().getSegment().getId().toString(),
-            segmentServer.getSegmentDescriptor(),
-            queryCacheKey
-        );
-        cacheKeys.put(segmentServer, segmentCacheKey);
+        CacheKey segmentCacheKey;
+        if(enableSubQueryReuse){
+          segmentCacheKey = strategy.computeSubQueryCacheKey(segmentServer.getServer().getSegment().getId().toString(),query);
+
+        }else{
+          segmentCacheKey = CacheUtil.computeSegmentCacheKey(
+              segmentServer.getServer().getSegment().getId().toString(),
+              segmentServer.getSegmentDescriptor(),
+              queryCacheKey
+          );
+        }
+        if(segmentCacheKey!=null){
+          cacheKeys.put(segmentServer, segmentCacheKey);
+        }
       }
       return cacheKeys;
     }
 
-    private Map<Cache.NamedKey, byte[]> computeCachedValues(Map<SegmentServerSelector, Cache.NamedKey> cacheKeys)
+    private Map<CacheKey, byte[]> computeCachedValues(Map<SegmentServerSelector, CacheKey> cacheKeys)
     {
       if (useCache) {
         return cache.getBulk(Iterables.limit(cacheKeys.values(), cacheConfig.getCacheBulkMergeLimit()));
@@ -615,16 +645,20 @@ public class CachingClusteredClient implements QuerySegmentWalker
     }
 
     private void addCachePopulatorKey(
-        Cache.NamedKey segmentCacheKey,
+        CacheKey segmentCacheKey,
         SegmentId segmentId,
         Interval segmentQueryInterval
     )
     {
+      int maxPopulatorSegs=cacheConfig.getMaxPopulatorSegments();
+      if(maxPopulatorSegs>0 && cachePopulatorKeyMap.size()>=maxPopulatorSegs){
+        return;
+      }
       cachePopulatorKeyMap.put(StringUtils.format("%s_%s", segmentId, segmentQueryInterval), segmentCacheKey);
     }
 
     @Nullable
-    private Cache.NamedKey getCachePopulatorKey(String segmentId, Interval segmentInterval)
+    private CacheKey getCachePopulatorKey(String segmentId, Interval segmentInterval)
     {
       return cachePopulatorKeyMap.get(StringUtils.format("%s_%s", segmentId, segmentInterval));
     }
@@ -651,17 +685,17 @@ public class CachingClusteredClient implements QuerySegmentWalker
 
     private void addSequencesFromCache(
         final List<Sequence<T>> listOfSequences,
-        final List<Pair<Interval, byte[]>> cachedResults
+        final List<Tuple3<Interval, byte[],Boolean>> cachedResults
     )
     {
       if (strategy == null) {
         return;
       }
 
-      final Function<Object, T> pullFromCacheFunction = strategy.pullFromSegmentLevelCache(false);
+      final Function<Object, T> pullFromCacheFunction = strategy.pullFromSegmentLevelCache(enableSubQueryReuse);
       final TypeReference<Object> cacheObjectClazz = strategy.getCacheObjectClazz();
-      for (Pair<Interval, byte[]> cachedResultPair : cachedResults) {
-        final byte[] cachedResult = cachedResultPair.rhs;
+      for (Tuple3<Interval, byte[],Boolean> cachedResultPair : cachedResults) {
+        final byte[] cachedResult = cachedResultPair._2;
         Sequence<Object> cachedSequence = new BaseSequence<>(
             new BaseSequence.IteratorMaker<Object, Iterator<Object>>()
             {
@@ -689,7 +723,15 @@ public class CachingClusteredClient implements QuerySegmentWalker
               }
             }
         );
-        listOfSequences.add(Sequences.map(cachedSequence, pullFromCacheFunction));
+        Sequence<T> mapSequence = Sequences.map(cachedSequence, pullFromCacheFunction);
+        if(enableSubQueryReuse && cachedResultPair._3 == true){
+          long start = System.currentTimeMillis();
+          Sequence<T> aggSequence = strategy.reAggregateCacheSequence(mapSequence);
+          log.info("Reaggregate partial hit cache sequence, cost: %s ms", System.currentTimeMillis() - start);
+          listOfSequences.add(aggSequence);
+        }else{
+          listOfSequences.add(mapSequence);
+        }
       }
     }
 
@@ -783,12 +825,12 @@ public class CachingClusteredClient implements QuerySegmentWalker
               .withMaxQueuedBytes(maxQueuedBytesPerServer),
           responseContext
       );
-      final Function<T, Object> cacheFn = strategy.prepareForSegmentLevelCache(false);
+      final Function<T, Object> cacheFn = strategy.prepareForSegmentLevelCache(enableSubQueryReuse);
 
       return resultsBySegments
           .map(result -> {
             final BySegmentResultValueClass<T> resultsOfSegment = result.getValue();
-            final Cache.NamedKey cachePopulatorKey =
+            final CacheKey cachePopulatorKey =
                 getCachePopulatorKey(resultsOfSegment.getSegmentId(), resultsOfSegment.getInterval());
             Sequence<T> res = Sequences.simple(resultsOfSegment.getResults());
             if (cachePopulatorKey != null) {
@@ -838,7 +880,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
     }
 
     /**
-     * It computes the ETAG which is used by {@link org.apache.druid.query.ResultLevelCachingQueryRunner} for
+     * It computes the ETAG which is used by {@link ResultLevelCachingQueryRunner} for
      * result level caches. queryCacheKey can be null if segment level cache is not being used. However, ETAG
      * is still computed since result level cache may still be on.
      */

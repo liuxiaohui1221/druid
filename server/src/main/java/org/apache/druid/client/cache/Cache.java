@@ -20,7 +20,7 @@
 package org.apache.druid.client.cache;
 
 import com.google.common.base.Preconditions;
-import org.apache.druid.client.reusecache.CacheKey;
+import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 
@@ -30,7 +30,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Set;
 
 /**
  */
@@ -48,7 +48,7 @@ public interface Cache<K,V> extends Closeable
    */
   Map<K, V> getBulk(Iterable<K> keys);
 
-  default List<CacheKey> getDimensionToKeys(String namespace)
+  default Set<K> getDimensionToKeys(String namespace)
   {
     return null;
   }
@@ -67,15 +67,21 @@ public interface Cache<K,V> extends Closeable
 
   class NamedKey extends CacheKey
   {
-    public final String namespace;
+
     public final byte[] key;
 
     public NamedKey(String namespace, byte[] key)
     {
+      super(namespace);
       Preconditions.checkArgument(namespace != null, "namespace must not be null");
       Preconditions.checkArgument(key != null, "key must not be null");
-      this.namespace = namespace;
       this.key = key;
+    }
+
+    @Override
+    public int length()
+    {
+      return key.length;
     }
 
     public byte[] toByteArray()

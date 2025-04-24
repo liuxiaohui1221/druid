@@ -72,7 +72,7 @@ public class QueryContexts
   public static final String NUM_RETRIES_ON_MISSING_SEGMENTS_KEY = "numRetriesOnMissingSegments";
   public static final String RETURN_PARTIAL_RESULTS_KEY = "returnPartialResults";
   public static final String USE_CACHE_KEY = "useCache";
-  public static final String ENABLE_REUSE_CACHE_KEY = "enableReuseCache";
+  public static final String ENABLE_REUSE_CACHE_KEY = "enableSubQueryReuse";
   public static final String SECONDARY_PARTITION_PRUNING_KEY = "secondaryPartitionPruning";
   public static final String ENABLE_DEBUG = "debug";
   public static final String BY_SEGMENT_KEY = "bySegment";
@@ -97,6 +97,8 @@ public class QueryContexts
 
   // SQL statement resource specific keys
   public static final String CTX_EXECUTION_MODE = "executionMode";
+
+  public static final String CTX_KEY_ENABLE_MATERIALIZED_VIEW = "enableMaterializedView";
 
   // Defaults
   public static final boolean DEFAULT_BY_SEGMENT = false;
@@ -124,6 +126,8 @@ public class QueryContexts
   public static final int DEFAULT_IN_SUB_QUERY_THRESHOLD = Integer.MAX_VALUE;
   public static final boolean DEFAULT_ENABLE_TIME_BOUNDARY_PLANNING = false;
   public static final boolean DEFAULT_WINDOWING_STRICT_VALIDATION = true;
+  public static final boolean DEFAULT_ENABLE_MATERIALIZED_VIEW = true;
+
 
   @SuppressWarnings("unused") // Used by Jackson serialization
   public enum Vectorize

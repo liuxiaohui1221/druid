@@ -55,13 +55,16 @@ public class CacheConfig
   private int cacheBulkMergeLimit = Integer.MAX_VALUE;
 
   @JsonProperty
-  private int maxEntrySize = 10_000_000;
+  private int maxEntrySize = 1_000_000;
 
   @JsonProperty
   private List<String> unCacheable = ImmutableList.of();
 
   @JsonProperty
   private int resultLevelCacheLimit = Integer.MAX_VALUE;
+
+  @JsonProperty
+  private int maxPopulatorSegments = 1000;
 
   public boolean isPopulateCache()
   {
@@ -117,5 +120,9 @@ public class CacheConfig
   {
     // O(n) impl, but I don't think we'll ever have a million query types here
     return !unCacheable.contains(queryType);
+  }
+
+  public int getMaxPopulatorSegments() {
+    return maxPopulatorSegments;
   }
 }

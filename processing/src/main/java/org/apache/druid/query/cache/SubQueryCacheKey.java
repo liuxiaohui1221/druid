@@ -1,4 +1,4 @@
-package org.apache.druid.client.reusecache;
+package org.apache.druid.query.cache;
 
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.filter.DimFilter;
@@ -8,10 +8,9 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
 
-public class CacheKey implements Serializable
+public class SubQueryCacheKey extends CacheKey
 {
 
-  public String namespace;
   private String dataSource;
   private List<Interval> intervals;
   private DimFilter filter;      // 过滤条件（需序列化为哈希）
@@ -19,8 +18,7 @@ public class CacheKey implements Serializable
   private List<String> aggregators; // 聚合器字段名
   private Granularity granularity;
 
-  public CacheKey(){}
-  public CacheKey(
+  public SubQueryCacheKey(
       String namespace,
       String dataSource,
       List<Interval> intervals,
@@ -30,19 +28,13 @@ public class CacheKey implements Serializable
       Granularity granularity
   )
   {
-    this.namespace = namespace;
+    super(namespace);
     this.dataSource = dataSource;
     this.intervals = intervals;
     this.filter = filter;
     this.dimensions = dimensions;
     this.aggregators = aggregators;
     this.granularity = granularity;
-  }
-
-  // 构造函数与哈希生成逻辑
-  @Override
-  public int hashCode() {
-    return Objects.hash(dataSource, intervals, filter, dimensions, aggregators);
   }
 
   @Override
@@ -54,17 +46,23 @@ public class CacheKey implements Serializable
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    CacheKey cacheKey = (CacheKey) o;
-    return Objects.equals(dataSource, cacheKey.dataSource)
-           && Objects.equals(
-        intervals,
-        cacheKey.intervals
-    )
-           && Objects.equals(filter, cacheKey.filter)
-           && Objects.equals(dimensions, cacheKey.dimensions)
-           && Objects.equals(aggregators, cacheKey.aggregators);
+    SubQueryCacheKey that = (SubQueryCacheKey) o;
+    return Objects.equals(namespace, that.namespace)
+           && Objects.equals(dataSource, that.dataSource)
+           && Objects.equals(intervals, that.intervals)
+           && Objects.equals(filter, that.filter)
+           && Objects.equals(dimensions, that.dimensions)
+           && Objects.equals(aggregators, that.aggregators)
+           && Objects.equals(granularity, that.granularity);
   }
 
+  @Override
+  public int hashCode()
+  {
+    return Objects.hash(namespace,dataSource, intervals, filter, dimensions, aggregators, granularity);
+  }
+
+  @Override
   public int length() {
     int filterLength = filter == null ? 0 : filter.getCacheKey().length;
     int dimensionsLength = dimensions == null ? 0 : dimensions.size() * 24;
