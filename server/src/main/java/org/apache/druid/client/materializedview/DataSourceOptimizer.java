@@ -19,29 +19,41 @@
 
 package org.apache.druid.client.materializedview;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.google.inject.Guice;
 import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.Key;
 import com.ibm.icu.impl.Assert;
 import org.apache.druid.client.TimelineServerView;
 import org.apache.druid.client.selector.ServerSelector;
 import org.apache.druid.common.guava.SettableSupplier;
+import org.apache.druid.guice.DruidGuiceExtensions;
+import org.apache.druid.guice.ExpressionModule;
+import org.apache.druid.guice.annotations.Json;
 import org.apache.druid.indexing.overlord.DerivativeDataSource;
+import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Comparators;
 import org.apache.druid.java.util.common.logger.Logger;
+import org.apache.druid.math.expr.ExprMacroTable;
 import org.apache.druid.query.JoinDataSource;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.TableDataSource;
 import org.apache.druid.query.groupby.GroupByQuery;
+import org.apache.druid.query.groupby.GroupingEngine;
+import org.apache.druid.query.groupby.orderby.DefaultLimitSpec;
+import org.apache.druid.query.groupby.orderby.LimitSpec;
 import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
 import org.apache.druid.query.spec.MultipleSpecificSegmentSpec;
 import org.apache.druid.query.timeseries.TimeseriesQuery;
@@ -82,7 +94,6 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
   private final ConcurrentHashMap<String, AtomicLong> hitCount = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, AtomicLong> costTime = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, ConcurrentHashMap<Set<String>, AtomicLong>> missFields = new ConcurrentHashMap<>();
-
   @Inject
   public DataSourceOptimizer(TimelineServerView serverView, DerivativeDataSourceManager client)
   {
@@ -114,22 +125,25 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
       return Collections.singletonList(query);
     }
     String queryDatasourceName = ((TableDataSource) query.getDataSource()).getName();
-
     String originBaseDataSource = client.getRootBaseDataSource(queryDatasourceName);
     List<Interval> allQueryIntervals = new ArrayList<>(query.getIntervals());
-
     //选择满足聚合粒度和查询范围以及包含所需字段的最大粒度物化视图集：相同的时间分区随机选择一个物化视图，
     // 不同的时间分区的物化视图都只需各自选择1个，并限制在时间范围条件内进行物化视图下推。
-    // get all fields which the query required
-    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+    Pair<Granularity,Set<String>> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+    if(requiredFields.lhs!=null){
+      Map<String, Object> context = new HashMap<>(query.getContext());
+      context.put(GroupingEngine.CTX_KEY_FUDGE_TIMESTAMP,null);
+      query = query.withOverriddenGranularity(requiredFields.lhs).withOverriddenContext(context);
+    }
+    Granularity granularity = query.getGranularity();
     Map<String,List<Interval>> choosedTopDerivatives =
         getMaximizeGranDerivatives(originBaseDataSource,allQueryIntervals,
-                                   client.getCandidateSortedDerivatives(originBaseDataSource,requiredFields,
-                                                                        query.getGranularity()));
+                                   client.getCandidateSortedDerivatives(originBaseDataSource,requiredFields.rhs,granularity
+                                                                        ));
     if (choosedTopDerivatives.isEmpty()) {
       return Collections.singletonList(query);
     }
-    List<Query> queries = new ArrayList<>();
+    List<Query> queries;
 
     lock.readLock().lock();
     try {
@@ -168,7 +182,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
             derivativesHitCount.putIfAbsent(derivativeDataSource.getDataSource(), new AtomicLong(0));
           }
           DerivativeDataSource queryDerivativeDataSource = subDerivatives.get(topDatasourceName);
-          query = unifyQueryGranularityIfNecessary(query, queryDerivativeDataSource);
+          query = unifyQueryGranularityIfNecessary(query, queryDerivativeDataSource, granularity);
 
           Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>> lastMaterializedSegmentsByInterval = null;
           DerivativeDataSource lastDataSource = null;
@@ -275,10 +289,6 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
           //物化视图查询
           if (!candidateDerivativeSegments.isEmpty()) {
             for (Map.Entry<String, Map<Interval, Pair<SettableSupplier<Boolean>, List<DataSegment>>>> entry : candidateDerivativeSegments.entrySet()) {
-//              queries.add(
-//                  query.withDataSource(new TableDataSource(entry.getKey()))
-//                       .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
-//                           getQuerySegmentDescriptors(entry.getValue()), topQueryIntervals)));
               List<SegmentDescriptor> segmentDescriptors = queryDsSegmentDescriptors.computeIfAbsent(
                   entry.getKey(), k -> new ArrayList<>()
               );
@@ -295,16 +305,13 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
             segmentDescriptors.addAll(getQuerySegmentDescriptors(remainingTopQuerySegments));
             List<Interval> intervals = queryDsIntervals.computeIfAbsent(originBaseDataSource, k -> new ArrayList<>());
             intervals.addAll(topQueryIntervals);
-//            queries.add(query.withDataSource(new TableDataSource(originBaseDataSource))
-//                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
-//                                 segmentDescriptors , topQueryIntervals)));
           }
           hitCount.get(topDatasourceName).incrementAndGet();
           costTime.get(topDatasourceName).addAndGet(System.currentTimeMillis() - start);
       }
 
       queries=mergeQuerys(query,queryDsIntervals,queryDsSegmentDescriptors);
-      log.info("Push down queries[%s] from query[%s], cost: %s ms", queries.size(), query,
+      log.info("Push down queries[%s] from query[%s], cost: %s ms", queries.size(), query.getDataSource(),
                System.currentTimeMillis() - start);
       return queries;
     }
@@ -320,11 +327,23 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
     Assert.assrt(queryDsIntervals.size() == queryDsSegmentDescriptors.size());
     List<Query> queries = new ArrayList<>();
     for (Map.Entry<String,List<Interval>> entry:queryDsIntervals.entrySet()) {
+      // group by limitSpec offset,limit改写为0,offset+limit
+      GroupByQuery groupByQuery=(GroupByQuery)query;
+      if(groupByQuery.getLimitSpec() instanceof DefaultLimitSpec){
+        DefaultLimitSpec limitSpec = (DefaultLimitSpec) groupByQuery.getLimitSpec();
+        query=groupByQuery.withLimitSpec(new DefaultLimitSpec(limitSpec.getColumns(),0,
+                                                              limitSpec.getLimit() + limitSpec.getOffset()));
+      }
+      List<SegmentDescriptor> segmentDescriptors = queryDsSegmentDescriptors.get(entry.getKey());
+      if(segmentDescriptors.isEmpty()){
+        continue;
+      }
       queries.add(query.withDataSource(new TableDataSource(entry.getKey()))
-                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(
-                                 queryDsSegmentDescriptors.get(entry.getKey()) , entry.getValue())));
-      log.info("Push down query datasource: [%s], intervals: [%s]", entry.getKey(), entry.getValue());
+                             .withQuerySegmentSpec(new MultipleSpecificSegmentSpec(segmentDescriptors
+                                  , entry.getValue())));
+      log.info("Push down sub query datasource: [%s], segments:[%s]", entry.getKey(),entry.getValue().size());
     }
+    //todo 当检测到下推查询集没有时间重叠进行下推时，支持PostAgg查询。
     return queries;
   }
 
@@ -450,10 +469,10 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
 
   private Query unifyQueryGranularityIfNecessary(
       Query query,
-      DerivativeDataSource queryDerivativeDataSource
+      DerivativeDataSource queryDerivativeDataSource,
+      Granularity granularity
   )
   {
-    Granularity granularity = query.getGranularity();
     if (granularity != null && queryDerivativeDataSource.getGranularitySpec().getQueryGranularity() != null) {
       Comparator<Granularity> comparator = Comparators.granularityGreaterFirst();
       int compare = comparator.compare(

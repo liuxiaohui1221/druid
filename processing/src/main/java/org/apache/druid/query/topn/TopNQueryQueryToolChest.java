@@ -39,7 +39,6 @@ import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;
-import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.BySegmentResultValue;
 import org.apache.druid.query.CacheStrategy;
 import org.apache.druid.query.FrameSignaturePair;
@@ -63,18 +62,14 @@ import org.apache.druid.query.cache.SubQueryCacheKey;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
 import org.apache.druid.query.dimension.DimensionSpec;
-import org.apache.druid.query.groupby.GroupByQuery;
-import org.apache.druid.query.groupby.ResultRow;
+import org.apache.druid.query.groupby.orderby.DefaultLimitSpec;
 import org.apache.druid.segment.Cursor;
 import org.apache.druid.segment.DimensionHandlerUtils;
-import org.apache.druid.segment.StringDimensionDictionary;
 import org.apache.druid.segment.column.RowSignature;
 import org.joda.time.DateTime;
-import org.joda.time.Interval;
 
 import java.io.Closeable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -332,7 +327,8 @@ public class TopNQueryQueryToolChest extends QueryToolChest<Result<TopNResultVal
         String dataSource = query.getDataSource().getTableNames().stream().findFirst().get();
         return new SubQueryCacheKey(namespace, dataSource, query.getIntervals(), query.getFilter(), dimensions,
                                     aggregatorSpecs,
-                                    query.getGranularity());
+                                    query.getGranularity(), null,query.getThreshold()
+        );
       }
 
       @Override

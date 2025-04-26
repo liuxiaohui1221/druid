@@ -2,15 +2,17 @@ package org.apache.druid.query.cache;
 
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.query.filter.DimFilter;
+import org.apache.druid.query.groupby.orderby.LimitSpec;
 import org.joda.time.Interval;
 
-import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
 
 public class SubQueryCacheKey extends CacheKey
 {
 
+  private final LimitSpec limitSpec;
+  private int threshold;
   private String dataSource;
   private List<Interval> intervals;
   private DimFilter filter;      // 过滤条件（需序列化为哈希）
@@ -25,7 +27,9 @@ public class SubQueryCacheKey extends CacheKey
       DimFilter filter,
       List<String> dimensions,
       List<String> aggregators,
-      Granularity granularity
+      Granularity granularity,
+      LimitSpec limitSpec,
+      int threshold
   )
   {
     super(namespace);
@@ -35,6 +39,8 @@ public class SubQueryCacheKey extends CacheKey
     this.dimensions = dimensions;
     this.aggregators = aggregators;
     this.granularity = granularity;
+    this.limitSpec = limitSpec;
+    this.threshold = threshold;
   }
 
   @Override
@@ -53,13 +59,15 @@ public class SubQueryCacheKey extends CacheKey
            && Objects.equals(filter, that.filter)
            && Objects.equals(dimensions, that.dimensions)
            && Objects.equals(aggregators, that.aggregators)
-           && Objects.equals(granularity, that.granularity);
+           && Objects.equals(granularity, that.granularity)
+           && Objects.equals(limitSpec, that.limitSpec)
+           && Objects.equals(threshold, that.threshold);
   }
 
   @Override
   public int hashCode()
   {
-    return Objects.hash(namespace,dataSource, intervals, filter, dimensions, aggregators, granularity);
+    return Objects.hash(namespace,dataSource, intervals, filter, dimensions, aggregators, granularity, limitSpec, threshold);
   }
 
   @Override
@@ -83,6 +91,11 @@ public class SubQueryCacheKey extends CacheKey
   public DimFilter getFilter()
   {
     return filter;
+  }
+
+  public LimitSpec getLimitSpec()
+  {
+    return limitSpec;
   }
 
   public List<String> getDimensions()

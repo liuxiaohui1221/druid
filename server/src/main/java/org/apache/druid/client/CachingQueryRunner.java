@@ -27,6 +27,7 @@ import com.google.common.primitives.Bytes;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
 import org.apache.druid.client.cache.CachePopulator;
+import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.client.reusecache.CaffeineReuseCache;
 import org.apache.druid.java.util.common.granularity.Granularity;
@@ -140,13 +141,14 @@ public class CachingQueryRunner<T> implements QueryRunner<T>
         }
         // 2. 查找父维度缓存
         List<String> subDimensions=strategy.extractSubDimensions(query);
-        SubQueryCacheKey parentKey = CacheUtil.findParentKey(cache,query,cacheId,subDimensions);
+        Pair<CacheUtil.HitInfo,SubQueryCacheKey> subQueryCacheKeyPair = CacheUtil.findParentKey(cache, query, cacheId, subDimensions);
+        SubQueryCacheKey parentKey = subQueryCacheKeyPair.rhs;
         if (parentKey!= null) {
           final byte[] parentResult = cache.get(parentKey);
           if (parentResult != null) {
             Sequence<T> originalResult = convertToSequence(strategy, parentResult, enableSubQueryReuse);
             // 2. 转换为子维度聚合的Sequence
-            log.info("Partial cache hit,aggregate by sub dimensions: {},hit dimensions:{},cost:{}ms", subDimensions,
+            log.info("SubQuery cache hit, aggregate by sub dimensions: {},hit dimensions:{},cost:{}ms", subDimensions,
                      parentKey.getDimensions(), System.currentTimeMillis() - start1);
 //            return strategy.reAggregateCacheSequence(originalResult,subDimensions);
             return originalResult;

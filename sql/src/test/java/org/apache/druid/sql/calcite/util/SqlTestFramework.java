@@ -260,7 +260,8 @@ public class SqlTestFramework
     {
       return new NativeSqlEngine(
           qlf,
-          objectMapper
+          objectMapper,
+          null
       );
     }
 

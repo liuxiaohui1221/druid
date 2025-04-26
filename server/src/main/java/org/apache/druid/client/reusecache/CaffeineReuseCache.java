@@ -58,7 +58,7 @@ public class CaffeineReuseCache implements org.apache.druid.client.cache.Cache<C
   private static final LZ4FastDecompressor LZ4_DECOMPRESSOR = LZ4_FACTORY.fastDecompressor();
   private static final LZ4Compressor LZ4_COMPRESSOR = LZ4_FACTORY.fastCompressor();
 
-  private final Cache<String, ConcurrentHashMap.KeySetView<CacheKey,Boolean>> dimensionToKeys;
+  private final Cache<String, ConcurrentHashMap.KeySetView<CacheKey,Boolean>> namespaceToKeys;
   private final Cache<CacheKey, byte[]> cache;
   private final AtomicReference<CacheStats> priorStats = new AtomicReference<>(CacheStats.empty());
   private final CaffeineCacheConfig config;
@@ -95,7 +95,7 @@ public class CaffeineReuseCache implements org.apache.druid.client.cache.Cache<C
     this.config = config;
 //    Cache<String, List<String>> builder =
 //        Caffeine.newBuilder().maximumSize(10_000).build((String key)->new ArrayList<>());
-    this.dimensionToKeys =
+    this.namespaceToKeys =
         Caffeine.newBuilder().maximumSize(config.getMaxDims()).build((String key)->ConcurrentHashMap.newKeySet());
   }
 
@@ -112,20 +112,20 @@ public class CaffeineReuseCache implements org.apache.druid.client.cache.Cache<C
     log.info("Put cache key: %s,bytes:%s", key.namespace,serValue.length);
     long start=System.currentTimeMillis();
     cache.put(key, serValue);
-    ConcurrentHashMap.KeySetView<CacheKey, Boolean> ifPresent = dimensionToKeys.getIfPresent(key.namespace);
+    ConcurrentHashMap.KeySetView<CacheKey, Boolean> ifPresent = namespaceToKeys.getIfPresent(key.namespace);
     if(ifPresent != null) {
       ifPresent.add(key);
     }else{
       ConcurrentHashMap.KeySetView<CacheKey, Boolean> cachedKeys = ConcurrentHashMap.newKeySet();
       cachedKeys.add(key);
-      dimensionToKeys.put(key.namespace, cachedKeys);
+      namespaceToKeys.put(key.namespace, cachedKeys);
     }
   }
 
   @Override
-  public Set<CacheKey> getDimensionToKeys(String namespace)
+  public Set<CacheKey> getNamespaceToKeys(String namespace)
   {
-    ConcurrentHashMap.KeySetView<CacheKey, Boolean> cachedKeys=this.dimensionToKeys.getIfPresent(namespace);
+    ConcurrentHashMap.KeySetView<CacheKey, Boolean> cachedKeys=this.namespaceToKeys.getIfPresent(namespace);
     if(cachedKeys==null){
       return Collections.emptySet();
     }

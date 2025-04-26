@@ -34,7 +34,9 @@ import com.google.common.collect.Sets;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.primitives.Bytes;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.inject.Inject;
+import com.sun.org.apache.xpath.internal.operations.Bool;
 import io.vavr.Tuple3;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
@@ -111,7 +113,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
 import java.util.function.BinaryOperator;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -303,6 +308,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
     private final boolean useCache;
     private final boolean populateCache;
     private final boolean enableSubQueryReuse;
+    private final ExecutorService cacheAggExecutor;
     private final boolean isBySegment;
     private final int uncoveredIntervalsLimit;
     private final Map<String, CacheKey> cachePopulatorKeyMap = new HashMap<>();
@@ -323,6 +329,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
       this.populateCache = CacheUtil.isPopulateSegmentCache(query, strategy, cacheConfig, CacheUtil.ServerType.BROKER);
       this.enableSubQueryReuse = CacheUtil.isEnableSubQueryReuseCache(query, strategy, cacheConfig, CacheUtil.ServerType.BROKER);
       final QueryContext queryContext = query.context();
+      cacheAggExecutor = Execs.multiThreaded(cacheConfig.getCacheAggThreads(), "broker-cache-reagg-pool-%d");
       this.isBySegment = queryContext.isBySegment();
       // Note that enabling this leads to putting uncovered intervals information in the response headers
       // and might blow up in some cases https://github.com/apache/druid/issues/2108
@@ -582,11 +589,12 @@ public class CachingClusteredClient implements QuerySegmentWalker
         byte[] cachedValue = cachedValues.get(segmentCacheKey);
         if(enableSubQueryReuse && cachedValue==null){
           List<String> subDimensions=strategy.extractSubDimensions(query);
-          CacheKey parentCacheKey = CacheUtil.findParentKey(cache,query,
-                                                    segment.getServer().getSegment().getId().toString(), subDimensions);
-          cachedValue = parentCacheKey==null?null:cache.get(parentCacheKey);
-          if(cachedValue!=null){
-            log.info("Partial cache hit for query: %s,%s,hit parentCacheKey:%s", query.getDataSource(),
+          Pair<CacheUtil.HitInfo,SubQueryCacheKey> subQueryCacheKeyPair = CacheUtil.findParentKey(cache, query,
+                                                                                                  segment.getServer().getSegment().getId().toString(), subDimensions);
+          SubQueryCacheKey parentCacheKey = subQueryCacheKeyPair.rhs;
+          cachedValue = parentCacheKey==null ? null : cache.get(parentCacheKey);
+          if(cachedValue != null){
+            log.info("Cache hit for sub query: %s,%s,hit parentCacheKey:%s", query.getDataSource(),
                      query.getIntervals()
                 ,parentCacheKey);
             hitPartial=true;
@@ -694,6 +702,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
 
       final Function<Object, T> pullFromCacheFunction = strategy.pullFromSegmentLevelCache(enableSubQueryReuse);
       final TypeReference<Object> cacheObjectClazz = strategy.getCacheObjectClazz();
+      List<Future<Sequence<T>>> futures = new ArrayList<>();
       for (Tuple3<Interval, byte[],Boolean> cachedResultPair : cachedResults) {
         final byte[] cachedResult = cachedResultPair._2;
         Sequence<Object> cachedSequence = new BaseSequence<>(
@@ -726,11 +735,18 @@ public class CachingClusteredClient implements QuerySegmentWalker
         Sequence<T> mapSequence = Sequences.map(cachedSequence, pullFromCacheFunction);
         if(enableSubQueryReuse && cachedResultPair._3 == true){
           long start = System.currentTimeMillis();
-          Sequence<T> aggSequence = strategy.reAggregateCacheSequence(mapSequence);
+          //Sequence<T> aggSequence = strategy.reAggregateCacheSequence(mapSequence);
+          futures.add(cacheAggExecutor.submit(() -> strategy.reAggregateCacheSequence(mapSequence)));
           log.info("Reaggregate partial hit cache sequence, cost: %s ms", System.currentTimeMillis() - start);
-          listOfSequences.add(aggSequence);
         }else{
           listOfSequences.add(mapSequence);
+        }
+      }
+      for (Future<Sequence<T>> future : futures) {
+        try {
+          listOfSequences.add(future.get());
+        }catch (Exception e){
+          log.error(e, "Error when reaggregate cache sequence");
         }
       }
     }

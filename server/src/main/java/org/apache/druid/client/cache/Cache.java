@@ -48,7 +48,7 @@ public interface Cache<K,V> extends Closeable
    */
   Map<K, V> getBulk(Iterable<K> keys);
 
-  default Set<K> getDimensionToKeys(String namespace)
+  default Set<K> getNamespaceToKeys(String namespace)
   {
     return null;
   }

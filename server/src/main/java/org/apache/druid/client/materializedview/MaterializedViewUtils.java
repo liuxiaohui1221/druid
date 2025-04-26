@@ -19,20 +19,36 @@
 
 package org.apache.druid.client.materializedview;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.Key;
 import org.apache.druid.common.guava.SettableSupplier;
+import org.apache.druid.guice.DruidGuiceExtensions;
+import org.apache.druid.guice.ExpressionModule;
+import org.apache.druid.guice.annotations.Json;
+import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.JodaUtils;
 import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.java.util.common.granularity.Granularity;
+import org.apache.druid.math.expr.Expr;
+import org.apache.druid.math.expr.ExprMacroTable;
+import org.apache.druid.math.expr.Parser;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.aggregation.FilteredAggregatorFactory;
 import org.apache.druid.query.dimension.DimensionSpec;
+import org.apache.druid.query.expression.TimestampFloorExprMacro;
 import org.apache.druid.query.groupby.GroupByQuery;
 import org.apache.druid.query.timeseries.TimeseriesQuery;
 import org.apache.druid.query.topn.TopNQuery;
+import org.apache.druid.segment.VirtualColumn;
+import org.apache.druid.segment.VirtualColumns;
+import org.apache.druid.segment.virtual.ExpressionVirtualColumn;
 import org.apache.druid.timeline.BaseShardSpecsSpec;
 import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.timeline.MaterializedDataSegment;
@@ -46,9 +62,21 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class MaterializedViewUtils
 {
+  public static final ExprMacroTable INSTANCE;
+
+  static {
+    final Injector injector = Guice.createInjector(
+        new DruidGuiceExtensions(),
+        binder -> binder.bind(Key.get(ObjectMapper.class, Json.class)).toInstance(new DefaultObjectMapper()),
+        new ExpressionModule()
+    );
+
+    INSTANCE = injector.getInstance(ExprMacroTable.class);
+  }
   /**
    * extract all dimensions in query.
    * only support TopNQuery/TimeseriesQuery/GroupByQuery
@@ -56,11 +84,11 @@ public class MaterializedViewUtils
    * @param query
    * @return dimensions set in query
    */
-  public static Set<String> getRequiredFields(Query query)
+  public static Pair<Granularity,Set<String>> getRequiredFields(Query query)
   {
     Set<String> dimsInFilter = null == query.getFilter() ? new HashSet<>() : query.getFilter().getRequiredColumns();
     Set<String> dimensions = new HashSet<>(dimsInFilter);
-
+    Granularity granularity=null;
     if (query instanceof TopNQuery) {
       TopNQuery q = (TopNQuery) query;
       dimensions.addAll(extractFieldsFromAggregations(q.getAggregatorSpecs()));
@@ -71,14 +99,31 @@ public class MaterializedViewUtils
     } else if (query instanceof GroupByQuery) {
       GroupByQuery q = (GroupByQuery) query;
       dimensions.addAll(extractFieldsFromAggregations(q.getAggregatorSpecs()));
+      VirtualColumns virtualColumns = q.getVirtualColumns();
+
       for (DimensionSpec spec : q.getDimensions()) {
         String dim = spec.getDimension();
-        dimensions.add(dim);
+        if(virtualColumns != null && virtualColumns.getVirtualColumn(dim)!=null){
+          VirtualColumn virtualColumn = virtualColumns.getVirtualColumn(dim);
+          if(virtualColumn instanceof ExpressionVirtualColumn){
+            String expression = ((ExpressionVirtualColumn) virtualColumn).getExpression();
+            Expr parsedExpr = Parser.parse(expression, INSTANCE);
+            //extract real granularity
+            if(parsedExpr instanceof TimestampFloorExprMacro.TimestampFloorExpr){
+              granularity = ((TimestampFloorExprMacro.TimestampFloorExpr) parsedExpr).getGranularity();
+            }
+            Expr.BindingAnalysis analysis = parsedExpr.analyzeInputs();
+            Set<String> dims = analysis.getRequiredBindings();
+            dimensions.addAll(dims);
+          }
+        }else{
+          dimensions.add(dim);
+        }
       }
     } else {
       throw new UnsupportedOperationException("Method getRequiredFields only supports TopNQuery/TimeseriesQuery/GroupByQuery");
     }
-    return dimensions;
+    return Pair.of(granularity,dimensions.stream().filter(d->!d.equals("__time")).collect(Collectors.toSet()));
   }
 
   private static Set<String> extractFieldsFromAggregations(List<AggregatorFactory> aggs)

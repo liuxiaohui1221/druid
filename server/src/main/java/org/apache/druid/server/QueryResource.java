@@ -42,7 +42,6 @@ import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.query.BadJsonQueryException;
 import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.Query;
-import org.apache.druid.query.QueryContext;
 import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryException;
 import org.apache.druid.query.QueryInterruptedException;
@@ -85,6 +84,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @Path("/druid/v2/")
 public class QueryResource implements QueryCountStatsProvider
 {
+  public static final String HEADER_CACHE_QUERY_HIT = "X-Druid-Query-HitTag";
   protected static final EmittingLogger log = new EmittingLogger(QueryResource.class);
   public static final EmittingLogger NO_STACK_LOGGER = log.noStackTrace();
 
@@ -142,7 +142,7 @@ public class QueryResource implements QueryCountStatsProvider
     this.mvOptimizer = mvOptimizer;
   }
 
-  public Query getMaterializedViewQueryIfNecessary(Query baseQuery)
+  public static Query getMaterializedViewQueryIfNecessary(Query<?>  baseQuery, MaterializedViewOptimizer mvOptimizer)
   {
     if (!(baseQuery instanceof BaseQuery)) {
       return baseQuery;
@@ -161,7 +161,7 @@ public class QueryResource implements QueryCountStatsProvider
 //      }
       return baseQuery;
     }
-    log.info("Materialized view query detected, converting to MaterializedViewQuery:[%s]",baseQuery.getDataSource());
+    log.info("Materialized view detected, Using materialized view optimize it:[%s]",baseQuery.getDataSource());
     return new MaterializedViewQuery.Builder().query((BaseQuery) baseQuery).optimizer(mvOptimizer).build();
   }
 
@@ -317,7 +317,7 @@ public class QueryResource implements QueryCountStatsProvider
           ImmutableMap.of(HEADER_IF_NONE_MATCH, prevEtag)
       );
     }
-    Query mvQuery = getMaterializedViewQueryIfNecessary(baseQuery);
+    Query mvQuery = getMaterializedViewQueryIfNecessary(baseQuery, mvOptimizer);
     return mvQuery;
   }
 

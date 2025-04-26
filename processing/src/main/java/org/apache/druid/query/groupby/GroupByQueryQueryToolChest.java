@@ -54,7 +54,6 @@ import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;
 import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.java.util.common.jackson.JacksonUtils;
-import org.apache.druid.query.BaseQuery;
 import org.apache.druid.query.CacheStrategy;
 import org.apache.druid.query.DataSource;
 import org.apache.druid.query.FrameSignaturePair;
@@ -66,10 +65,10 @@ import org.apache.druid.query.QueryResourceId;
 import org.apache.druid.query.QueryRunner;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.SubqueryQueryRunner;
-import org.apache.druid.query.aggregation.Aggregator;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.aggregation.MetricManipulationFn;
 import org.apache.druid.query.aggregation.MetricManipulatorFns;
+import org.apache.druid.query.aggregation.PostAggregator;
 import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.query.cache.CacheKeyBuilder;
 import org.apache.druid.query.cache.SubQueryCacheKey;
@@ -77,21 +76,19 @@ import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
 import org.apache.druid.query.dimension.DimensionSpec;
 import org.apache.druid.query.extraction.ExtractionFn;
-import org.apache.druid.query.topn.TopNQuery;
+import org.apache.druid.query.groupby.having.HavingSpec;
+import org.apache.druid.query.groupby.orderby.LimitSpec;
 import org.apache.druid.segment.Cursor;
 import org.apache.druid.segment.DimensionHandlerUtils;
 import org.apache.druid.segment.StringDimensionDictionary;
+import org.apache.druid.segment.VirtualColumns;
 import org.apache.druid.segment.column.RowSignature;
 import org.apache.druid.segment.incremental.IncrementalIndex;
-import org.apache.druid.segment.incremental.IncrementalIndexRow;
 import org.apache.druid.segment.incremental.IncrementalIndexSchema;
 import org.apache.druid.segment.incremental.IndexSizeExceededException;
 import org.apache.druid.segment.incremental.OnheapIncrementalIndex;
 import org.joda.time.DateTime;
-import org.joda.time.DateTimeZone;
 import org.joda.time.Interval;
-import org.joda.time.format.DateTimeFormat;
-import org.joda.time.format.DateTimeFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,15 +97,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BinaryOperator;
 import java.util.stream.Collectors;
 
@@ -586,8 +580,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
       {
         //disable segment-level cache on borker,
         //see PR https://github.com/apache/druid/issues/3820  --fixed
-        //return willMergeRunners || !bySegment;
-        return enableSubQueryReuse;
+        return willMergeRunners || !bySegment;
       }
 
       @Override
@@ -612,8 +605,14 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
               query.getAggregatorSpecs().stream().map(AggregatorFactory::getName).collect(Collectors.toList());
         List<String> dimensions = query.getDimensions().stream().map(DimensionSpec::getDimension).collect(Collectors.toList());
         String dataSource = query.getDataSource().getTableNames().stream().findFirst().get();
+        LimitSpec limitSpec = query.getLimitSpec();
+        //VirtualColumns virtualColumns = query.getVirtualColumns();
+        //HavingSpec havingSpec = query.getHavingSpec();
+        //List<PostAggregator> postAggregatorSpecs = query.getPostAggregatorSpecs();
         return new SubQueryCacheKey(namespace, dataSource, query.getIntervals(), query.getFilter(), dimensions, aggregatorSpecs,
-                                    query.getGranularity());
+                                    query.getGranularity(), limitSpec,
+                                    0
+        );
       }
 
       @Override

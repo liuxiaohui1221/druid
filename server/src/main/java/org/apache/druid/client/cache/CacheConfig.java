@@ -66,6 +66,9 @@ public class CacheConfig
   @JsonProperty
   private int maxPopulatorSegments = 1000;
 
+  @JsonProperty
+  private int cacheAggThreads = 2;
+
   public boolean isPopulateCache()
   {
     return populateCache;
@@ -124,5 +127,9 @@ public class CacheConfig
 
   public int getMaxPopulatorSegments() {
     return maxPopulatorSegments;
+  }
+
+  public int getCacheAggThreads() {
+    return cacheAggThreads;
   }
 }

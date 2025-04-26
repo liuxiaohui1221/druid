@@ -138,6 +138,7 @@ public class GroupByResourcesReservationPool
     }
     catch (Throwable t) {
       // Unable to allocate the resources, perform cleanup and rethrow the exception
+
       pool.remove(queryResourceId);
       throw t;
     }

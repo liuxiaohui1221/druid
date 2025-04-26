@@ -194,7 +194,7 @@ public class CalcitePlannerModuleTest extends CalciteTestBase
     PlannerContext context = PlannerContext.create(
         toolbox,
         "SELECT 1",
-        new NativeSqlEngine(queryLifecycleFactory, mapper),
+        new NativeSqlEngine(queryLifecycleFactory, mapper, null),
         Collections.emptyMap(),
         null
     );

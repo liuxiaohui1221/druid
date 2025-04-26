@@ -21,8 +21,11 @@ package org.apache.druid.client;
 
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
+import org.apache.druid.client.materializedview.MaterializedViewUtils;
+import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.granularity.Granularity;
+import org.apache.druid.math.expr.Parser;
 import org.apache.druid.query.CacheStrategy;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryToolChest;
@@ -35,6 +38,7 @@ import org.joda.time.Interval;
 import javax.annotation.Nullable;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -42,21 +46,17 @@ public class CacheUtil
 {
   private static final byte CACHE_GROUPBY_QUERY = 0x15;
 
-  public static <T> SubQueryCacheKey findParentKey(Cache cache,Query<T> query, String namespace,
-                                                   List<String> subDimensions) {
-    Interval queryInterval = query.getIntervals().get(0);
+  public static <T> Pair<HitInfo,SubQueryCacheKey> findParentKey(Cache cache, Query<T> query, String namespace,
+                                                                 List<String> subDimensions) {
+    List<Interval> queryIntervals = query.getIntervals();
     Granularity queryGranularity = query.getGranularity();
     DimFilter queryFilter = query.getFilter();
-    Set<CacheKey> parentKeys = cache.getDimensionToKeys(namespace);
+    Set<CacheKey> parentKeys = cache.getNamespaceToKeys(namespace);
     for(CacheKey parentKey : parentKeys){
       if(parentKey instanceof SubQueryCacheKey){
         SubQueryCacheKey parentSubKey = (SubQueryCacheKey) parentKey;
         //比较粒度
         if (queryGranularity.isFinerThan(parentSubKey.getGranularity())){
-          continue;
-        }
-        //比较时间范围
-        if (!parentSubKey.getIntervals().get(0).contains(queryInterval)){
           continue;
         }
         //比较维度
@@ -67,10 +67,45 @@ public class CacheUtil
         if (!isFilterCompatible(parentSubKey.getFilter(), queryFilter)){
           continue;
         }
-        return parentSubKey;
+        //compute hit info
+        HitInfo hitInfo = new HitInfo();
+        //比较时间范围
+        List<Interval> residual = MaterializedViewUtils.minus(queryIntervals, parentSubKey.getIntervals());
+        if(residual.equals(queryIntervals)){
+          continue;
+        }
+        //存在重叠时间
+        if (isContainsIntervals(parentSubKey.getIntervals(),queryIntervals)){
+          hitInfo.residualIntervals = residual;
+        }else{
+          continue;
+        }
+
+        hitInfo.isSubQueryHit = true;
+        if(parentSubKey.getDimensions().size()!=subDimensions.size()){
+          hitInfo.isSubQueryHit = false;
+        }
+
+        return Pair.of(hitInfo,parentSubKey);
       }
     }
-    return null;
+    return Pair.of(null,null);
+  }
+
+  private static boolean isContainsIntervals(List<Interval> intervals, List<Interval> queryIntervals) {
+    for(Interval interval : queryIntervals){
+      for(Interval cachedInterval:intervals){
+        if(cachedInterval.contains(interval)){
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  public static class HitInfo{
+    public boolean isSubQueryHit;
+    public List<Interval> residualIntervals;
   }
 
   // 检查父过滤条件是否被当前查询过滤条件覆盖
@@ -196,6 +231,18 @@ public class CacheUtil
            && cacheConfig.isEnableSubQueryReuse();
   }
 
+  public static <T> boolean isEnableSubQueryResultCache(
+      Query<T> query,
+      @Nullable CacheStrategy<T, Object, Query<T>> cacheStrategy,
+      CacheConfig cacheConfig,
+      ServerType serverType
+  )
+  {
+    return isQueryCacheable(query, cacheStrategy, cacheConfig, serverType, false)
+           && query.context().isEnableSubQueryReuse()
+           && cacheConfig.isEnableSubQueryReuse();
+  }
+
   /**
    * Returns whether the result-level cache should be checked for a particular query.
    *
@@ -255,7 +302,7 @@ public class CacheUtil
   )
   {
     return cacheStrategy != null
-           && cacheStrategy.isCacheable(query, serverType.willMergeRunners(), bySegment, cacheConfig.isEnableSubQueryReuse())
+           && cacheStrategy.isCacheable(query, serverType.willMergeRunners(), bySegment, query.context().isEnableSubQueryReuse())
            && cacheConfig.isQueryCacheable(query)
            && query.getDataSource().isCacheable(serverType == ServerType.BROKER);
   }

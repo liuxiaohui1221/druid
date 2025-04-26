@@ -29,15 +29,21 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.druid.client.CacheUtil;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
+import org.apache.druid.client.materializedview.MaterializedViewUtils;
+import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.RE;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.SequenceWrapper;
 import org.apache.druid.java.util.common.guava.Sequences;
 import org.apache.druid.java.util.common.jackson.JacksonUtils;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.query.cache.CacheKey;
+import org.apache.druid.query.cache.SubQueryCacheKey;
 import org.apache.druid.query.context.ResponseContext;
+import org.apache.druid.query.groupby.GroupingEngine;
+import org.apache.druid.query.groupby.orderby.DefaultLimitSpec;
 import org.apache.druid.query.materializedview.MaterializedViewQuery;
 import org.apache.druid.server.QueryResource;
 
@@ -46,11 +52,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
 {
   private static final Logger log = new Logger(ResultLevelCachingQueryRunner.class);
+  private static final String PARTIAL_CACHE_KEY = "partial";
   private final QueryRunner baseRunner;
   private ObjectMapper objectMapper;
   private final Cache cache;
@@ -76,7 +86,13 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
     this.cache = cache;
     this.cacheConfig = cacheConfig;
     if(mvquery instanceof MaterializedViewQuery){
-      this.query = ((MaterializedViewQuery)mvquery).getQuery();
+      query = ((MaterializedViewQuery)mvquery).getQuery();
+      Pair<Granularity, Set<String>> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+      if(requiredFields.lhs!=null){
+        Map<String, Object> context = new HashMap<>(query.getContext());
+        context.put(GroupingEngine.CTX_KEY_FUDGE_TIMESTAMP,null);
+        query = query.withOverriddenGranularity(requiredFields.lhs).withOverriddenContext(context);
+      }
     }else{
       this.query = mvquery;
     }
@@ -88,30 +104,39 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
         CacheUtil.ServerType.BROKER
     );
     this.useResultCache = CacheUtil.isUseResultCache(query, strategy, cacheConfig, CacheUtil.ServerType.BROKER);
-    this.reuseSubQueryCache = CacheUtil.isEnableSubQueryReuseCache(query, strategy, cacheConfig,
+    this.reuseSubQueryCache = CacheUtil.isEnableSubQueryResultCache(query, strategy, cacheConfig,
                                                              CacheUtil.ServerType.BROKER);
   }
 
   @Override
   public Sequence<T> run(QueryPlus queryPlus, ResponseContext responseContext)
   {
-    if (useResultCache || populateResultCache || reuseSubQueryCache) {
+    if (useResultCache || populateResultCache) {
       byte[] cachedResultSet;
       CacheKey cacheKey;
-      Boolean hitPartial=null;
+      Boolean hitParentKey=null;
+      boolean isSubResult=true;
+      CacheUtil.HitInfo hitInfo = null;
       cacheKey = strategy.computeSubQueryCacheKey(query.getDataSource().getTableNames().stream().findFirst().get(),
                                                   query);
       if(reuseSubQueryCache && cacheKey!=null){
         List<String> subDimensions=strategy.extractSubDimensions(query);
-        CacheKey parentKey = CacheUtil.findParentKey(cache,query,
-                                                  query.getDataSource().getTableNames().stream().findFirst().get(),
-                                              subDimensions);
         cachedResultSet = cache.get(cacheKey);
-        if(cachedResultSet==null){
-          cachedResultSet = parentKey==null?null:cache.get(parentKey);
-          hitPartial=true;
+        if(cachedResultSet == null){
+          Pair<CacheUtil.HitInfo,SubQueryCacheKey> subQueryCacheKeyPair = CacheUtil.findParentKey(cache, query,
+                                                                                                  query.getDataSource().getTableNames().stream().findFirst().get(),
+                                                                                                  subDimensions);
+          SubQueryCacheKey parentKey = subQueryCacheKeyPair.rhs;
+          hitInfo = subQueryCacheKeyPair.lhs;
+          if(parentKey!=null){
+            cachedResultSet = cache.get(parentKey);
+            if(!subQueryCacheKeyPair.lhs.isSubQueryHit && parentKey.getLimitSpec() instanceof DefaultLimitSpec){
+              isSubResult = false;
+            }
+            hitParentKey=true;
+          }
         }else{
-          hitPartial=false;
+          hitParentKey=false;
         }
       }else{
         String cacheKeyStr = StringUtils.fromUtf8(strategy.computeResultLevelCacheKey(query));
@@ -120,27 +145,48 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
       }
       String existingResultSetId = extractEtagFromResults(cachedResultSet);
       existingResultSetId = existingResultSetId == null ? "" : existingResultSetId;
-      query = query.withOverriddenContext(
-          ImmutableMap.of(QueryResource.HEADER_IF_NONE_MATCH, existingResultSetId));
+      HashMap<String, Object> cacheKeyMap = new HashMap<>();
+      cacheKeyMap.put(QueryResource.HEADER_IF_NONE_MATCH, existingResultSetId);
+      if(isSubResult && hitParentKey != null){
+        if(!hitParentKey || hitInfo.residualIntervals.isEmpty()){
+          cacheKeyMap.put(QueryResource.HEADER_CACHE_QUERY_HIT, "all");
+        }else{
+          //未命中区间
+          cacheKeyMap.put(QueryResource.HEADER_CACHE_QUERY_HIT, hitInfo.residualIntervals);
+        }
+      }
+      query = query.withOverriddenContext(cacheKeyMap);
 
       Sequence<T> resultFromClient = baseRunner.run(
           QueryPlus.wrap(query),
           responseContext
       );
       String newResultSetId = responseContext.getEntityTag();
-      if (useResultCache && newResultSetId != null && newResultSetId.equals(existingResultSetId)) {
-        log.debug("Return cached result set as there is no change in identifiers for query %s ", query.getId());
-        return deserializeResults(cachedResultSet, strategy, existingResultSetId, hitPartial);
-      } else {
+      if (useResultCache && hitParentKey==null && newResultSetId != null && newResultSetId.equals(existingResultSetId)) {
+        log.info("Return cached result set as there is no change in identifiers for query %s ", query.getId());
+        // Call accumulate on the sequence to ensure that all Wrapper/Closer/Baggage/etc. get called
+        resultFromClient.accumulate(null, (accumulated, in) -> accumulated);
+        return deserializeResults(cachedResultSet, strategy, existingResultSetId, hitParentKey);
+      }else if(reuseSubQueryCache && cachedResultSet!=null && hitParentKey && isSubResult){
+        //Query语句部分命中，要求缓存无limit,无offset
+        // Call accumulate on the sequence to ensure that all Wrapper/Closer/Baggage/etc. get called
+        resultFromClient.accumulate(null, (accumulated, in) -> accumulated);
+        return deserializeResults(cachedResultSet, strategy, existingResultSetId, hitParentKey);
+      }else {
 
         @Nullable
-        ResultLevelCachePopulator resultLevelCachePopulator = createResultLevelCachePopulator(
+        ResultLevelCachePopulator resultLevelCachePopulator1 = createResultLevelCachePopulator(
             cacheKey,
             newResultSetId
         );
-        if (resultLevelCachePopulator == null) {
+        if (resultLevelCachePopulator1 == null) {
           return resultFromClient;
         }
+        final ResultLevelCachePopulator resultLevelCachePopulator = resultLevelCachePopulator1==null?
+            createResultLevelCachePopulator(
+            cacheKey,
+            newResultSetId
+        ):resultLevelCachePopulator1;
         final Function<T, Object> cacheFn = strategy.prepareForCache(true, reuseSubQueryCache);
 
         return Sequences.wrap(
@@ -177,7 +223,7 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
                 } else if (resultLevelCachePopulator.isShouldPopulate()) {
                   // The resultset identifier and its length is cached along with the resultset
                   resultLevelCachePopulator.populateResults();
-                  log.debug("Cache population complete for query %s", query.getId());
+                  log.info("Cache population complete for query %s", query.getId());
                 }
                 resultLevelCachePopulator.stopPopulating();
               }
@@ -326,8 +372,8 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
       int cacheLimit = cacheConfig.getResultLevelCacheLimit();
       try (JsonGenerator gen = mapper.getFactory().createGenerator(cacheObjectStream)) {
         JacksonUtils.writeObjectUsingSerializerProvider(gen, serialiers, cacheFn.apply(resultEntry));
-        log.info("Cached bytes: %s", cacheObjectStream.size());
         if (cacheLimit > 0 && cacheObjectStream.size() > cacheLimit) {
+          log.info("Result level cache limit exceeded[%s] for query %s, stopping caching", cacheLimit,query.getId());
           stopPopulating();
         }
       }

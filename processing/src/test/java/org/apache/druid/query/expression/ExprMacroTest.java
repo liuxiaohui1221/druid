@@ -23,6 +23,7 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.druid.common.config.NullHandling;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.math.expr.Expr;
+import org.apache.druid.math.expr.ExprMacroTable;
 import org.apache.druid.math.expr.ExpressionType;
 import org.apache.druid.math.expr.InputBindings;
 import org.apache.druid.math.expr.Parser;
@@ -31,6 +32,8 @@ import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+
+import java.util.Set;
 
 public class ExprMacroTest
 {
@@ -228,6 +231,14 @@ public class ExprMacroTest
     assertExpr("ipv4_match(ipv4_broadcast, '192.168.0.0/16')", 1L);
   }
 
+  @Test
+  public void testExtract(){
+    String expression = "timestamp_floor(\"__time\",'PT1H',null,'UTC')";
+    final Expr parsedExpr = Parser.parse(expression, TestExprMacroTable.INSTANCE);
+    Expr.BindingAnalysis analysis = parsedExpr.analyzeInputs();
+    Set<String> dims = analysis.getRequiredBindings();
+    Assert.assertTrue(dims.contains("__time"));
+  }
   private void assertExpr(final String expression, final Object expectedResult)
   {
     final Expr expr = Parser.parse(expression, TestExprMacroTable.INSTANCE);

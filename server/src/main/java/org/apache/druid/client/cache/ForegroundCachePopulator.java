@@ -83,7 +83,6 @@ public class ForegroundCachePopulator implements CachePopulator
           if (!tooBig.isTrue()) {
             try {
               JacksonUtils.writeObjectUsingSerializerProvider(jsonGenerator, serializers, cacheFn.apply(input));
-              log.info("Current cached bytes: %s", bytes.size());
               // Not flushing jsonGenerator before checking this, but should be ok since Jackson buffers are
               // typically just a few KB, and we don't want to waste cycles flushing.
               if (maxEntrySize > 0 && bytes.size() > maxEntrySize) {
@@ -111,6 +110,8 @@ public class ForegroundCachePopulator implements CachePopulator
             if (isDone) {
               // Check tooBig, then check maxEntrySize one more time, after closing/flushing jsonGenerator.
               if (tooBig.isTrue() || (maxEntrySize > 0 && bytes.size() > maxEntrySize)) {
+                log.info("Skipping cache entry for key [%s] because it is too large (%,d bytes)", cacheKey,
+                         bytes.size());
                 cachePopulatorStats.incrementOversized();
                 return;
               }

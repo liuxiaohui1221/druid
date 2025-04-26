@@ -46,6 +46,7 @@ import org.apache.druid.indexing.overlord.DerivativeDataSource;
 import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.Intervals;
+import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.http.client.HttpClient;
@@ -250,8 +251,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
 
     SortedSet<DerivativeDataSource> expectedSortedDers=
         new TreeSet<>(subDs2.values());
-    Set<String> requiredFields = MaterializedViewUtils.getRequiredFields(query);
-    EasyMock.expect(mockClient.getCandidateSortedDerivatives(baseDataSource, requiredFields, query.getGranularity())).andStubReturn(expectedSortedDers);
+    Pair<Granularity,Set<String>> requiredFields = MaterializedViewUtils.getRequiredFields(query);
+    EasyMock.expect(mockClient.getCandidateSortedDerivatives(baseDataSource, requiredFields.rhs, query.getGranularity())).andStubReturn(expectedSortedDers);
 
     EasyMock.replay(mockClient);
     setupViews(mockClient);

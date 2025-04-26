@@ -28,6 +28,7 @@ import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.druid.error.InvalidSqlInput;
 import org.apache.druid.guice.LazySingleton;
 import org.apache.druid.query.groupby.GroupByQuery;
+import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
 import org.apache.druid.query.timeboundary.TimeBoundaryQuery;
 import org.apache.druid.server.QueryLifecycleFactory;
 import org.apache.druid.sql.calcite.parser.DruidSqlInsert;
@@ -58,15 +59,18 @@ public class NativeSqlEngine implements SqlEngine
 
   private final QueryLifecycleFactory queryLifecycleFactory;
   private final ObjectMapper jsonMapper;
+  private final MaterializedViewOptimizer mvOptimizer;
 
   @Inject
   public NativeSqlEngine(
       final QueryLifecycleFactory queryLifecycleFactory,
-      final ObjectMapper jsonMapper
+      final ObjectMapper jsonMapper,
+      final MaterializedViewOptimizer mvOptimizer
   )
   {
     this.queryLifecycleFactory = queryLifecycleFactory;
     this.jsonMapper = jsonMapper;
+    this.mvOptimizer = mvOptimizer;
   }
 
   @Override
@@ -130,7 +134,8 @@ public class NativeSqlEngine implements SqlEngine
         queryLifecycleFactory,
         plannerContext,
         jsonMapper,
-        relRoot.fields
+        relRoot.fields,
+        mvOptimizer
     );
   }
 

@@ -39,12 +39,14 @@ import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.filter.BoundDimFilter;
 import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.query.filter.OrDimFilter;
+import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
 import org.apache.druid.query.ordering.StringComparators;
 import org.apache.druid.query.spec.QuerySegmentSpec;
 import org.apache.druid.query.timeseries.TimeseriesQuery;
 import org.apache.druid.segment.column.ColumnHolder;
 import org.apache.druid.server.QueryLifecycle;
 import org.apache.druid.server.QueryLifecycleFactory;
+import org.apache.druid.server.QueryResource;
 import org.apache.druid.server.QueryResponse;
 import org.apache.druid.server.security.Access;
 import org.apache.druid.server.security.AuthenticationResult;
@@ -65,25 +67,28 @@ public class NativeQueryMaker implements QueryMaker
   private final PlannerContext plannerContext;
   private final ObjectMapper jsonMapper;
   private final List<Pair<Integer, String>> fieldMapping;
+  private final MaterializedViewOptimizer mvOptimizer;
 
   public NativeQueryMaker(
       final QueryLifecycleFactory queryLifecycleFactory,
       final PlannerContext plannerContext,
       final ObjectMapper jsonMapper,
-      final List<Pair<Integer, String>> fieldMapping
+      final List<Pair<Integer, String>> fieldMapping,
+      MaterializedViewOptimizer mvOptimizer
   )
   {
     this.queryLifecycleFactory = queryLifecycleFactory;
     this.plannerContext = plannerContext;
     this.jsonMapper = jsonMapper;
     this.fieldMapping = fieldMapping;
+    this.mvOptimizer = mvOptimizer;
   }
 
   @Override
   public QueryResponse<Object[]> runQuery(final DruidQuery druidQuery)
   {
-    final Query<?> query = druidQuery.getQuery();
-
+    final Query<?> baseQuery = druidQuery.getQuery();
+    Query<?> query = QueryResource.getMaterializedViewQueryIfNecessary(baseQuery, mvOptimizer);
     if (plannerContext.getPlannerConfig().isRequireTimeCondition()
         && !(druidQuery.getDataSource() instanceof InlineDataSource)) {
       if (Intervals.ONLY_ETERNITY.equals(findBaseDataSourceIntervals(query))) {
