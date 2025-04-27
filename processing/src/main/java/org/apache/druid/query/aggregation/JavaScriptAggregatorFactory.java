@@ -198,6 +198,12 @@ public class JavaScriptAggregatorFactory extends AggregatorFactory
     return name;
   }
 
+  @Override
+  public String getFieldName()
+  {
+    return name;
+  }
+
   @JsonProperty
   public List<String> getFieldNames()
   {

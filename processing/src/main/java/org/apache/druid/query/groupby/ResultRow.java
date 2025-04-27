@@ -25,7 +25,10 @@ import org.apache.druid.data.input.MapBasedInputRow;
 import org.apache.druid.data.input.MapBasedRow;
 import org.apache.druid.data.input.Row;
 import org.apache.druid.query.aggregation.AggregatorFactory;
+import org.apache.druid.query.aggregation.DoubleSumAggregatorFactory;
+import org.apache.druid.query.aggregation.LongSumAggregatorFactory;
 import org.apache.druid.query.aggregation.PostAggregator;
+import org.apache.druid.query.aggregation.cardinality.CardinalityAggregatorFactory;
 import org.apache.druid.query.dimension.DimensionSpec;
 import org.apache.druid.segment.column.RowSignature;
 import org.joda.time.DateTime;
@@ -33,6 +36,7 @@ import org.joda.time.DateTime;
 import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -171,6 +175,23 @@ public final class ResultRow
     return map;
   }
 
+  public Map<String, Object> toOutputMetricMap(final GroupByQuery query)
+  {
+    final RowSignature signature = query.getResultRowSignature();
+    final Map<String, Object> map = new HashMap<>();
+
+    for (int i = query.getResultRowDimensionStart(); i < row.length; i++) {
+      final String columnName = signature.getColumnName(i);
+      if(i>=query.getResultRowAggregatorStart()){
+        map.put(query.getAggregatorSpecs().get(i-query.getResultRowAggregatorStart()).getFieldName(), row[i]);
+      }else{
+        map.put(columnName, row[i]);
+      }
+    }
+
+    return map;
+  }
+
   /**
    * Returns a {@link Row} representation of the data in this row.
    */
@@ -199,7 +220,7 @@ public final class ResultRow
     }
 
     return new MapBasedInputRow(timestamp, query.getDimensions().stream().map(dim->dim.getOutputName()).collect(
-        Collectors.toList()), toMap(query));
+        Collectors.toList()), toOutputMetricMap(query));
   }
 
   @Override

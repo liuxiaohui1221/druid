@@ -566,6 +566,12 @@ public class SegmentAnalyzerTest extends InitializedNullHandlingTest
     }
 
     @Override
+    public String getFieldName()
+    {
+      return name;
+    }
+
+    @Override
     public List<String> requiredFields()
     {
       return Collections.singletonList(fieldName);

@@ -231,6 +231,11 @@ public abstract class AggregatorFactory implements Cacheable
   public abstract String getName();
 
   /**
+   * @return intput name of the aggregator column.
+   */
+  public abstract String getFieldName();
+
+  /**
    * Get a list of fields that aggregators built by this factory will need to read.
    */
   public abstract List<String> requiredFields();

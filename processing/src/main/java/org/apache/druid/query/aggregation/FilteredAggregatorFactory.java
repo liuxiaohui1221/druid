@@ -175,6 +175,12 @@ public class FilteredAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public String getFieldName()
+  {
+    return name;
+  }
+
+  @Override
   public AggregatorFactory withName(String newName)
   {
     return new FilteredAggregatorFactory(delegate.withName(newName), dimFilter, newName);

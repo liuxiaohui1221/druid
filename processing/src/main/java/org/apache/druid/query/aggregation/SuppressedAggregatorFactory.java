@@ -127,6 +127,12 @@ public class SuppressedAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public String getFieldName()
+  {
+    return delegate.getName();
+  }
+
+  @Override
   public List<String> requiredFields()
   {
     return delegate.requiredFields();

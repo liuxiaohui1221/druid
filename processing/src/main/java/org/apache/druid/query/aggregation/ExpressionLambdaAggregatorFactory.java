@@ -202,6 +202,12 @@ public class ExpressionLambdaAggregatorFactory extends AggregatorFactory
     return name;
   }
 
+  @Override
+  public String getFieldName()
+  {
+    return name;
+  }
+
   @JsonProperty
   @Nullable
   @JsonInclude(JsonInclude.Include.NON_EMPTY)

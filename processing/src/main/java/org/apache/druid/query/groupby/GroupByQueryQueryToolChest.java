@@ -573,7 +573,6 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
     return new CacheStrategy<ResultRow, Object, GroupByQuery>()
     {
       private static final byte CACHE_STRATEGY_VERSION = 0x1;
-      private final Set<String> columns = query.getRequiredColumns();
       private final List<AggregatorFactory> aggs = query.getAggregatorSpecs();
       private final List<DimensionSpec> dims = query.getDimensions();
 
@@ -651,10 +650,10 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
       )
       {
         final boolean resultRowHasTimestamp = query.getResultRowHasTimestamp();
-        if(enableSubDimensionFilterReuse){
-          return prepareForCacheReuseFunction(resultRowHasTimestamp,isResultLevelCache,query);
-        }
-        return new Function<ResultRow, Object>()
+//        if(enableSubDimensionFilterReuse){
+//        }
+        return prepareForCacheReuseFunction(resultRowHasTimestamp,isResultLevelCache,query);
+        /*return new Function<ResultRow, Object>()
         {
           @Override
           public Object apply(ResultRow resultRow)
@@ -680,7 +679,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
             }
             return retVal;
           }
-        };
+        };*/
       }
 
       @Override
@@ -737,10 +736,10 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
         final int dimensionStart = query.getResultRowDimensionStart();
         final int aggregatorStart = query.getResultRowAggregatorStart();
         final int postAggregatorStart = query.getResultRowPostAggregatorStart();
-        if(enableSubDimensionFilterReuse){
-          return pullFromCacheReuseFunction(resultRowHasTimestamp,isResultLevelCache,query);
-        }
-        return new Function<Object, ResultRow>()
+//        if(enableSubDimensionFilterReuse){
+//        }
+        return pullFromCacheReuseFunction(resultRowHasTimestamp,isResultLevelCache,query);
+        /*return new Function<Object, ResultRow>()
         {
           private final Granularity granularity = query.getGranularity();
 
@@ -801,7 +800,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
             }
             return resultRow;
           }
-        };
+        };*/
       }
 
       private Function<Object, ResultRow> pullFromCacheReuseFunction(boolean resultRowHasTimestamp, boolean isResultLevelCache, GroupByQuery query) {
@@ -883,7 +882,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
         List<String> dimOutputNames = query.getDimensions().stream().map(DimensionSpec::getOutputName).collect(Collectors.toList());
         final IncrementalIndexSchema incrementalIndexSchema =
             new IncrementalIndexSchema.Builder().withQueryGranularity(granularity)
-                .withMetrics(query.getAggregatorSpecs().toArray(new AggregatorFactory[0]))
+                .withMetrics(query.getAggregatorSpecs().toArray(new AggregatorFactory[0])).withVirtualColumns(query.getVirtualColumns())
                                                 .withDimensionsSpec(new DimensionsSpec.Builder()
                                                                         .setDefaultSchemaDimensions(dimOutputNames).build())
                                                 .build();

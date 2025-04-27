@@ -159,6 +159,12 @@ public class GroupingAggregatorFactory extends AggregatorFactory
     return name;
   }
 
+  @Override
+  public String getFieldName()
+  {
+    return name;
+  }
+
   public long getValue()
   {
     return value;

@@ -214,6 +214,7 @@ public abstract class SimpleLongAggregatorFactory extends NullableNumericAggrega
     return name;
   }
 
+  @Override
   @Nullable
   @JsonProperty
   @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -267,6 +267,12 @@ public class CardinalityAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public String getFieldName()
+  {
+    return name;
+  }
+
+  @Override
   public List<String> requiredFields()
   {
     return makeRequiredFieldNamesFromFields(fields);
