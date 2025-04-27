@@ -397,6 +397,8 @@ public abstract class ResponseContext
      */
     public static final Key ETAG = new StringKey("ETag", false, true);
 
+    public static final Key PARTIAL_ETAG = new StringKey("Partial_ETag", false, true);
+
     /**
      * Query total bytes gathered.
      */
@@ -631,6 +633,12 @@ public abstract class ResponseContext
     putValue(Keys.ETAG, eTag);
   }
 
+  public void putPartialEntityTag(String eTag)
+  {
+    putValue(Keys.PARTIAL_ETAG, eTag);
+  }
+
+
   public void putTimeoutTime(long time)
   {
     putValue(Keys.TIMEOUT_AT, time);
@@ -677,6 +685,11 @@ public abstract class ResponseContext
   {
     return (String) get(Keys.ETAG);
   }
+  public String getPartialHitEntityTag()
+  {
+    return (String) get(Keys.PARTIAL_ETAG);
+  }
+
 
   public AtomicLong getTotalBytes()
   {

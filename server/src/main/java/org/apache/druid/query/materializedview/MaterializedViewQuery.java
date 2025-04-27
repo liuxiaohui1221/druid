@@ -183,6 +183,11 @@ public class MaterializedViewQuery<T> extends BaseQuery<T>
     return new MaterializedViewQuery((BaseQuery) query.withId(id), optimizer);
   }
 
+  public MaterializedViewQuery withQuery(Query query) {
+    return new MaterializedViewQuery((BaseQuery) query, optimizer);
+  }
+
+
   @Override
   public String getId()
   {

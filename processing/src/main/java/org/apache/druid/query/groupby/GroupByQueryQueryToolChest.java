@@ -34,6 +34,7 @@ import com.google.common.base.Functions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.Lists;
 import com.google.inject.Inject;
+import org.apache.druid.data.input.MapBasedInputRow;
 import org.apache.druid.data.input.Row;
 import org.apache.druid.data.input.impl.DimensionsSpec;
 import org.apache.druid.error.DruidException;
@@ -102,6 +103,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.BinaryOperator;
 import java.util.stream.Collectors;
@@ -571,9 +573,9 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
     return new CacheStrategy<ResultRow, Object, GroupByQuery>()
     {
       private static final byte CACHE_STRATEGY_VERSION = 0x1;
+      private final Set<String> columns = query.getRequiredColumns();
       private final List<AggregatorFactory> aggs = query.getAggregatorSpecs();
       private final List<DimensionSpec> dims = query.getDimensions();
-
 
       @Override
       public boolean isCacheable(GroupByQuery query, boolean willMergeRunners, boolean bySegment, boolean enableSubQueryReuse)
@@ -797,7 +799,6 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
                   results.hasNext()
               );
             }
-
             return resultRow;
           }
         };
@@ -824,14 +825,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
               throw new ISE("timestamp type error!");
             }
             //判断时间是否在intervals范围内
-            boolean flag= false;
-            for(Interval interval : intervals) {
-              if(interval.getStartMillis()<=timestamp.getMillis() && interval.getEndMillis()>=timestamp.getMillis()){
-                flag=true;
-                break;
-              }
-            }
-            if(!flag){
+            if(!checkTime(timestamp,intervals)){
               return null;
             }
             final int size = isResultLevelCache
@@ -881,7 +875,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
 
       @Override
       public Sequence<ResultRow> reAggregateCacheSequence(
-          Sequence<ResultRow> originalResult
+          Sequence<ResultRow> originalResult, List<Interval> hitIntervals
       )
       {
         long start = System.currentTimeMillis();
@@ -897,7 +891,13 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
             new OnheapIncrementalIndex.Builder().setIndexSchema(incrementalIndexSchema).setMaxRowCount(1000000).build();
         originalResult.map(row -> {
           try {
-            incrementalIndex.add(row.toMapBasedInputRow(query),true);
+            MapBasedInputRow mapBasedInputRow = row.toMapBasedInputRow(query);
+            /*if(hitIntervals!=null && hitIntervals.size()>0){
+              if(!checkTime(mapBasedInputRow.getTimestamp(),hitIntervals)){
+                return null;
+              }
+            }*/
+            incrementalIndex.add(mapBasedInputRow,true);
           }
           catch (IndexSizeExceededException e) {
             log.error("Index size exceeded!!!",e);
@@ -909,6 +909,15 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
         return Sequences.simple(incrementalIndex.iterableWithPostAggregations(query.getPostAggregatorSpecs(),
                                                                               query.isDescending()))
                         .map(row -> ResultRow.fromLegacyRow(row,query));
+      }
+
+      private boolean checkTime(DateTime timestamp, List<Interval> hitIntervals) {
+        for(Interval interval:hitIntervals){
+          if(interval.contains(timestamp)){//左闭右开
+            return true;
+          }
+        }
+        return false;
       }
     };
   }

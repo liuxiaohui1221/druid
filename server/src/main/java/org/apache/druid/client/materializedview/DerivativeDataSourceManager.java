@@ -309,8 +309,7 @@ public class DerivativeDataSourceManager
     Set<DerivativeDataSource> derivativesWithRequiredFields = new HashSet<>();
     for (DerivativeDataSource derivativeDataSource : allDerivatives) {
       if (derivativeDataSource.getColumns().containsAll(requiredFields)
-          && (derivativeDataSource.getGranularitySpec().getQueryGranularity().isFinerThan(queryGranularity))
-          || queryGranularity.equals(derivativeDataSource.getGranularitySpec().getQueryGranularity())) {
+          && !queryGranularity.isFinerThan(derivativeDataSource.getGranularitySpec().getQueryGranularity())) {
         derivativesWithRequiredFields.add(derivativeDataSource);
       }
     }

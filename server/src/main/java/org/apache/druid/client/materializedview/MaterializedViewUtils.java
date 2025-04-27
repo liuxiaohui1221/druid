@@ -105,6 +105,7 @@ public class MaterializedViewUtils
         String dim = spec.getDimension();
         if(virtualColumns != null && virtualColumns.getVirtualColumn(dim)!=null){
           VirtualColumn virtualColumn = virtualColumns.getVirtualColumn(dim);
+          List<String> cols = virtualColumn.requiredColumns();
           if(virtualColumn instanceof ExpressionVirtualColumn){
             String expression = ((ExpressionVirtualColumn) virtualColumn).getExpression();
             Expr parsedExpr = Parser.parse(expression, INSTANCE);
@@ -112,10 +113,10 @@ public class MaterializedViewUtils
             if(parsedExpr instanceof TimestampFloorExprMacro.TimestampFloorExpr){
               granularity = ((TimestampFloorExprMacro.TimestampFloorExpr) parsedExpr).getGranularity();
             }
-            Expr.BindingAnalysis analysis = parsedExpr.analyzeInputs();
-            Set<String> dims = analysis.getRequiredBindings();
-            dimensions.addAll(dims);
+//            Expr.BindingAnalysis analysis = parsedExpr.analyzeInputs();
+//            Set<String> dims = analysis.getRequiredBindings();
           }
+          dimensions.addAll(cols);
         }else{
           dimensions.add(dim);
         }
@@ -356,7 +357,7 @@ public class MaterializedViewUtils
   public static List<Interval> minus(List<Interval> interval2, List<Interval> interval1)
   {
     if (interval1.isEmpty() || interval2.isEmpty()) {
-      return interval1;
+      return interval2;
     }
     Iterator<Interval> it1 = JodaUtils.condenseIntervals(interval1).iterator();
     Iterator<Interval> it2 = JodaUtils.condenseIntervals(interval2).iterator();

@@ -42,6 +42,7 @@ import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Comparators;
 import org.apache.druid.java.util.common.logger.Logger;
@@ -130,12 +131,13 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
     //选择满足聚合粒度和查询范围以及包含所需字段的最大粒度物化视图集：相同的时间分区随机选择一个物化视图，
     // 不同的时间分区的物化视图都只需各自选择1个，并限制在时间范围条件内进行物化视图下推。
     Pair<Granularity,Set<String>> requiredFields = MaterializedViewUtils.getRequiredFields(query);
-    if(requiredFields.lhs!=null){
-      Map<String, Object> context = new HashMap<>(query.getContext());
-      context.put(GroupingEngine.CTX_KEY_FUDGE_TIMESTAMP,null);
-      query = query.withOverriddenGranularity(requiredFields.lhs).withOverriddenContext(context);
-    }
     Granularity granularity = query.getGranularity();
+    if(requiredFields.lhs!=null){
+      granularity = requiredFields.lhs;
+//      Map<String, Object> context = new HashMap<>(query.getContext());
+//      context.put(GroupingEngine.CTX_KEY_FUDGE_TIMESTAMP,null);
+//      query = query.withOverriddenGranularity(requiredFields.lhs).withOverriddenContext(context);
+    }
     Map<String,List<Interval>> choosedTopDerivatives =
         getMaximizeGranDerivatives(originBaseDataSource,allQueryIntervals,
                                    client.getCandidateSortedDerivatives(originBaseDataSource,requiredFields.rhs,granularity
@@ -469,18 +471,18 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
 
   private Query unifyQueryGranularityIfNecessary(
       Query query,
-      DerivativeDataSource queryDerivativeDataSource,
+      DerivativeDataSource derivativeDataSource,
       Granularity granularity
   )
   {
-    if (granularity != null && queryDerivativeDataSource.getGranularitySpec().getQueryGranularity() != null) {
+    if (granularity != null && !query.getGranularity().equals(Granularities.ALL)) {
       Comparator<Granularity> comparator = Comparators.granularityGreaterFirst();
       int compare = comparator.compare(
-          queryDerivativeDataSource.getGranularitySpec().getQueryGranularity(),
+          derivativeDataSource.getGranularitySpec().getQueryGranularity(),
           granularity
       );
       query = query.withOverriddenGranularity(compare < 0
-                                              ? queryDerivativeDataSource.getGranularitySpec().getQueryGranularity()
+                                              ? derivativeDataSource.getGranularitySpec().getQueryGranularity()
                                               : granularity);
     }
     return query;

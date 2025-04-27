@@ -19,9 +19,12 @@
 
 package org.apache.druid.client;
 
+import org.apache.commons.collections.comparators.ComparableComparator;
+import org.apache.commons.lang3.compare.ComparableUtils;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
 import org.apache.druid.client.materializedview.MaterializedViewUtils;
+import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.granularity.Granularity;
@@ -33,18 +36,26 @@ import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.query.cache.SubQueryCacheKey;
 import org.apache.druid.query.filter.DimFilter;
+import org.apache.druid.query.groupby.GroupByQuery;
+import org.apache.druid.query.groupby.orderby.DefaultLimitSpec;
+import org.apache.druid.query.groupby.orderby.LimitSpec;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 public class CacheUtil
 {
   private static final byte CACHE_GROUPBY_QUERY = 0x15;
+  private static final String ENTRY_SPLIT_OPERATOR = ", ";
+  private static final String KV_SPLIT_OPERATOR = "@@";
 
   public static <T> Pair<HitInfo,SubQueryCacheKey> findParentKey(Cache cache, Query<T> query, String namespace,
                                                                  List<String> subDimensions) {
@@ -52,6 +63,9 @@ public class CacheUtil
     Granularity queryGranularity = query.getGranularity();
     DimFilter queryFilter = query.getFilter();
     Set<CacheKey> parentKeys = cache.getNamespaceToKeys(namespace);
+    long residualRangeLen = Long.MAX_VALUE;
+    HitInfo hitInfo=null;
+    SubQueryCacheKey bestParentKey = null;
     for(CacheKey parentKey : parentKeys){
       if(parentKey instanceof SubQueryCacheKey){
         SubQueryCacheKey parentSubKey = (SubQueryCacheKey) parentKey;
@@ -63,49 +77,107 @@ public class CacheUtil
         if (!parentSubKey.getDimensions().containsAll(subDimensions)){
           continue;
         }
+        //比较指标
+        if (!parentSubKey.getAggregators().containsAll(query.getRequiredColumns())){
+
+        }
         //比较过滤条件
         if (!isFilterCompatible(parentSubKey.getFilter(), queryFilter)){
           continue;
         }
+
+        //比较limit
+        if(!isLimitCompatible(parentSubKey.getLimitSpec(), query)){
+          continue;
+        }
+
         //compute hit info
-        HitInfo hitInfo = new HitInfo();
         //比较时间范围
         List<Interval> residual = MaterializedViewUtils.minus(queryIntervals, parentSubKey.getIntervals());
-        if(residual.equals(queryIntervals)){
-          continue;
-        }
-        //存在重叠时间
-        if (isContainsIntervals(parentSubKey.getIntervals(),queryIntervals)){
-          hitInfo.residualIntervals = residual;
-        }else{
-          continue;
-        }
+        if(!residual.equals(queryIntervals)){
+          //存在重叠区间，选择剩余时间段最短的
+          long newResidualRangeLen = computeIntervalLen(residual);
+          if((hitInfo==null || !hitInfo.isSubQueryHit) && newResidualRangeLen < residualRangeLen){
+            residualRangeLen = newResidualRangeLen;
+            hitInfo = new HitInfo();
+            hitInfo.residualIntervals = residual;
+            hitInfo.hitIntervals = MaterializedViewUtils.minus(queryIntervals, residual);
 
-        hitInfo.isSubQueryHit = true;
-        if(parentSubKey.getDimensions().size()!=subDimensions.size()){
-          hitInfo.isSubQueryHit = false;
-        }
 
-        return Pair.of(hitInfo,parentSubKey);
-      }
-    }
-    return Pair.of(null,null);
-  }
-
-  private static boolean isContainsIntervals(List<Interval> intervals, List<Interval> queryIntervals) {
-    for(Interval interval : queryIntervals){
-      for(Interval cachedInterval:intervals){
-        if(cachedInterval.contains(interval)){
-          return true;
+            hitInfo.isSubQueryHit = true;
+            if(parentSubKey.getDimensions().size()!=subDimensions.size()){
+              hitInfo.isSubQueryHit = false;
+            }
+            bestParentKey = parentSubKey;
+          }
         }
       }
     }
-    return false;
+    if(hitInfo == null){
+      return Pair.of(null,null);
+    }else{
+      return Pair.of(hitInfo,bestParentKey);
+    }
   }
+
+  private static <T> boolean isLimitCompatible(LimitSpec limitSpec, Query<T> query) {
+    if( limitSpec == null){
+      return true;
+    }
+    if(limitSpec instanceof DefaultLimitSpec){
+      if(query instanceof GroupByQuery){
+        GroupByQuery groupByQuery=(GroupByQuery)query;
+        if(groupByQuery.getLimitSpec() instanceof DefaultLimitSpec){
+          DefaultLimitSpec parentLimitSpec = (DefaultLimitSpec) limitSpec;
+          DefaultLimitSpec currentLimitSpec = (DefaultLimitSpec) groupByQuery.getLimitSpec();
+          if(parentLimitSpec.getLimit()+parentLimitSpec.getOffset() < currentLimitSpec.getLimit()+currentLimitSpec.getOffset()){
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  private static long computeIntervalLen(List<Interval> residual) {
+    long len = 0;
+    for(Interval interval : residual){
+      len += interval.toDurationMillis();
+    }
+    return len;
+  }
+
+  public static String computePartialHitEtag(Map<Interval, String> existingResultSetId) {
+    //构造有序Map，根据key排序
+    Map<String, String> sortedMap = new TreeMap<>();
+    for(Map.Entry<Interval, String> entry : existingResultSetId.entrySet()){
+      sortedMap.put(entry.getKey().toString(), entry.getValue());
+    }
+    StringBuilder etagBuilder = new StringBuilder();
+    for (Map.Entry<String, String> entry : sortedMap.entrySet()) {
+      etagBuilder.append(entry.getKey().toString()).append(KV_SPLIT_OPERATOR).append(entry.getValue()).append(ENTRY_SPLIT_OPERATOR);
+    }
+    return etagBuilder.toString();
+  }
+
+  public static HashMap<Interval, String> convertPartialHitEtagToMap(String existingResultSetId) {
+    if (existingResultSetId == null) {
+      return null;
+    }
+    HashMap<Interval, String> resultMap = new HashMap<>();
+    String[] intervalTagId = existingResultSetId.split(ENTRY_SPLIT_OPERATOR);
+    for(String intervalTagIdStr : intervalTagId){
+      String[] intervalTagIdArr = intervalTagIdStr.split(KV_SPLIT_OPERATOR);
+      resultMap.put(Intervals.of(intervalTagIdArr[0]), intervalTagIdArr[1]);
+    }
+    return resultMap;
+  }
+
 
   public static class HitInfo{
-    public boolean isSubQueryHit;
+    public Boolean isSubQueryHit;
     public List<Interval> residualIntervals;
+    public List<Interval> hitIntervals;
   }
 
   // 检查父过滤条件是否被当前查询过滤条件覆盖

@@ -34,10 +34,13 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.inject.Inject;
 import org.apache.druid.client.materializedview.DerivativeDataSourceManager;
+import org.apache.druid.client.materializedview.MaterializedViewUtils;
 import org.apache.druid.guice.LazySingleton;
 import org.apache.druid.guice.annotations.Json;
 import org.apache.druid.guice.annotations.Self;
 import org.apache.druid.guice.annotations.Smile;
+import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.query.BadJsonQueryException;
 import org.apache.druid.query.BaseQuery;
@@ -48,6 +51,7 @@ import org.apache.druid.query.QueryInterruptedException;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.context.ResponseContext.Keys;
+import org.apache.druid.query.groupby.GroupingEngine;
 import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
 import org.apache.druid.query.materializedview.MaterializedViewQuery;
 import org.apache.druid.server.metrics.QueryCountStatsProvider;
@@ -76,6 +80,8 @@ import javax.ws.rs.core.Response.Status;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
@@ -85,6 +91,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class QueryResource implements QueryCountStatsProvider
 {
   public static final String HEADER_CACHE_QUERY_HIT = "X-Druid-Query-HitTag";
+  public static final String HEADER_CACHE_INTERVALS_HIT = "X-Druid-Query-IntervalsHit";
   protected static final EmittingLogger log = new EmittingLogger(QueryResource.class);
   public static final EmittingLogger NO_STACK_LOGGER = log.noStackTrace();
 

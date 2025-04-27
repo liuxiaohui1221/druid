@@ -395,8 +395,12 @@ public class CachingClusteredClient implements QuerySegmentWalker
       final Set<SegmentServerSelector> segmentServers = computeSegmentsToQuery(timeline, specificSegments);
       @Nullable
       final byte[] queryCacheKey = cacheKeyManager.computeSegmentLevelQueryCacheKey();
+      Object pTag = query.getContext().get(QueryResource.HEADER_IF_NONE_MATCH);
       @Nullable
-      final String prevEtag = (String) query.getContext().get(QueryResource.HEADER_IF_NONE_MATCH);
+      String prevEtag = null;
+      if(pTag instanceof String){
+        prevEtag = (String)pTag;
+      }
       if (prevEtag != null) {
         @Nullable
         final String currentEtag = cacheKeyManager.computeResultLevelCachingEtag(segmentServers, queryCacheKey);
@@ -732,7 +736,7 @@ public class CachingClusteredClient implements QuerySegmentWalker
               }
             }
         );
-        Sequence<T> mapSequence = Sequences.map(cachedSequence, pullFromCacheFunction);
+        Sequence<T> mapSequence = Sequences.map(cachedSequence, pullFromCacheFunction).filter(Objects::nonNull);
         if(enableSubQueryReuse && cachedResultPair._3 == true){
           long start = System.currentTimeMillis();
           //Sequence<T> aggSequence = strategy.reAggregateCacheSequence(mapSequence);

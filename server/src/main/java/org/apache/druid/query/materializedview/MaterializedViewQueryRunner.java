@@ -19,6 +19,7 @@
 
 package org.apache.druid.query.materializedview;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -27,8 +28,8 @@ import com.google.common.hash.Hashing;
 import com.google.common.primitives.Bytes;
 import org.apache.druid.client.CacheUtil;
 import org.apache.druid.client.cache.CacheConfig;
-import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.MergeSequence;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.java.util.common.guava.Sequences;
@@ -53,7 +54,10 @@ import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 
@@ -85,24 +89,32 @@ public class MaterializedViewQueryRunner<T> implements QueryRunner<T>
     //检测是否已缓存结果
     @Nullable
     final Object hitQueryTag = query.getContext().get(QueryResource.HEADER_CACHE_QUERY_HIT);
+    final Object hitIntervalsTagObj = query.getContext().get(QueryResource.HEADER_CACHE_INTERVALS_HIT);
+    List<Interval> hitIntervalsTag = null;
+    if( hitIntervalsTagObj != null && hitIntervalsTagObj instanceof List){
+      hitIntervalsTag = (List<Interval>) hitIntervalsTagObj;
+    }
     @Nullable
-    final String prevEtag = (String) query.getContext().get(QueryResource.HEADER_IF_NONE_MATCH);
+    final Object prevEtag=query.getContext().get(QueryResource.HEADER_IF_NONE_MATCH);
 
     List<Query> optimizedQueries = optimizer.optimize(query);
     long skip=0;
     long limit=Long.MAX_VALUE;
     if(reuseSubQueryCache || cacheConfig.isPopulateResultLevelCache()){
-      optimizedQueries = getUncachedQueries(query, hitQueryTag, optimizedQueries, responseContext, prevEtag, reuseSubQueryCache);
+      optimizedQueries = getUncachedQueries(query, hitQueryTag, hitIntervalsTag, optimizedQueries, responseContext,
+                                            prevEtag, reuseSubQueryCache);
       if(optimizedQueries.isEmpty()){{
         return Sequences.empty();
       }}
-      if(query instanceof GroupByQuery){
-        GroupByQuery groupByQuery=(GroupByQuery)query;
-        LimitSpec limitSpec = groupByQuery.getLimitSpec();
-        if(limitSpec instanceof DefaultLimitSpec){
-          DefaultLimitSpec defaultLimitSpec = (DefaultLimitSpec) limitSpec;
-          skip=defaultLimitSpec.getOffset();
-          limit=defaultLimitSpec.getLimit();
+      if(optimizedQueries.size()>1){
+        if(query instanceof GroupByQuery){
+          GroupByQuery groupByQuery=(GroupByQuery)query;
+          LimitSpec limitSpec = groupByQuery.getLimitSpec();
+          if(limitSpec instanceof DefaultLimitSpec){
+            DefaultLimitSpec defaultLimitSpec = (DefaultLimitSpec) limitSpec;
+            skip=defaultLimitSpec.getOffset();
+            limit=defaultLimitSpec.getLimit();
+          }
         }
       }
     }
@@ -123,33 +135,122 @@ public class MaterializedViewQueryRunner<T> implements QueryRunner<T>
     ).skip(skip).limit(limit);
   }
 
-  private List<Query> getUncachedQueries(
-      Query query, Object hitQueryTag,
-      List<Query> optimizedQueries, ResponseContext responseContext, String prevEtag,boolean reuseSubQueryCache) {
+  @VisibleForTesting
+  public List<Query> getUncachedQueries(
+      Query query, Object hitQueryTag, List<Interval> hitIntervalsTag,
+      List<Query> optimizedQueries, ResponseContext responseContext, Object prevEtag,boolean reuseSubQueryCache) {
     List<SegmentDescriptor> segments = new ArrayList<>();
     for (Query q : optimizedQueries) {
       segments.addAll(getSegments(q));
     }
-    //查询语句完全匹配
+    if(segments.isEmpty()){
+      return optimizedQueries;
+    }
     if (prevEtag != null) {
-      @Nullable
-      final String currentEtag = computeResultLevelCachingEtag(query,segments, cacheStrategy,reuseSubQueryCache);
-      if (null != currentEtag) {
-        responseContext.putEntityTag(currentEtag);
+      if ("all".equals(hitQueryTag)) {//查询语句属于完全匹配
+        return Collections.emptyList();
       }
-      //查询语句匹配(或包含,或重叠)，且segment集合没有变化
-      if(currentEtag != null && currentEtag.equals(prevEtag)){
-        if (hitQueryTag==null || "all".equals(hitQueryTag)) {
-          return Collections.emptyList();
-        } else if(hitQueryTag instanceof List){
-          //查询结果部分命中缓存，返回部分结果，并构造剩余子查询
-          List<Interval> residualIntervals = (List<Interval>)hitQueryTag;
-          //构造剩余子查询
-          return getResidualQueries(optimizedQueries, residualIntervals);
+      if(prevEtag instanceof String){
+        //todo Etag为了标识重叠区间segment集合是否变化，改造为根据时间分区段格式存储：Map<Interval, String>
+        @Nullable
+        final String currentEtag = computeResultLevelCachingEtag(query, segments, cacheStrategy,
+                                                                 reuseSubQueryCache);
+        if (null != currentEtag) {
+          responseContext.putEntityTag(currentEtag);
+        }
+        //查询语句匹配(或包含)，且segment集合没有变化
+        if(currentEtag != null && currentEtag.equals(prevEtag)){
+          if (hitQueryTag==null) {
+            return Collections.emptyList();
+          }
+        }
+      } else if (prevEtag instanceof Map) {
+        Map<Interval, String> prevCacheEtagMap = (Map<Interval, String>) prevEtag;
+        if(hitIntervalsTag == null){
+          hitIntervalsTag = query.getIntervals();
+        }
+        Map<Interval,List<SegmentDescriptor>> coverSegments = getOverlapSegments(segments,hitIntervalsTag);
+        //todo Etag为了标识重叠区间segment集合是否变化，改造为根据时间分区段格式存储：Map<Interval, String>
+        @Nullable
+        final Map<Interval,String> currentEtagMap = computePartialResultLevelCachingEtag(query, coverSegments);
+        if (null != currentEtagMap) {
+          String currentEtag = CacheUtil.computePartialHitEtag(currentEtagMap);
+          responseContext.putPartialEntityTag(currentEtag);
+        }
+        //查询语句匹配，且重叠区间的segment集合没有变化
+        if(currentEtagMap != null && cacheSegmentsNoChange(currentEtagMap, prevCacheEtagMap, hitIntervalsTag,
+                                                           query.getGranularity())){
+          if(hitQueryTag instanceof List){//缓存未命中的区间
+            //查询结果部分命中缓存，返回部分结果，并构造剩余子查询
+            List<Interval> residualIntervals = (List<Interval>)hitQueryTag;
+            //构造剩余子查询
+            return getResidualQueries(optimizedQueries, residualIntervals);
+          }
+        }
+      }
+
+    }
+    return optimizedQueries;
+  }
+
+  /**
+   *
+   * @param currentEtag
+   * @param prevEtag
+   * @param hitIntervalsTag 缓存命中的区间
+   * @return
+   */
+  private boolean cacheSegmentsNoChange(Map<Interval, String> currentEtag, Map<Interval, String> prevEtag,
+                                        List<Interval> hitIntervalsTag, Granularity granularity) {
+    //检查所有缓存命中的区间hitIntervalsTag中两个Map中相同key对应相应的tag是否相等。
+    for (Interval interval : hitIntervalsTag) {
+      //interval按granularity划分多个intervals进行比较
+      Iterator<Interval> iterator = granularity.getIterable(interval).iterator();
+      while (iterator.hasNext()) {
+        Interval subInterval = iterator.next();
+        if(currentEtag.containsKey(subInterval)&& prevEtag.containsKey(subInterval)){
+          if (currentEtag.get(subInterval).equals(prevEtag.get(subInterval))) {
+            return true;
+          }
         }
       }
     }
-    return optimizedQueries;
+    return false;
+  }
+
+  private Map<Interval, String> computePartialResultLevelCachingEtag(Query query,
+                                                                     Map<Interval,List<SegmentDescriptor>> overlapSegments) {
+    Map<Interval, String> currentIntervalEtagMap = new HashMap<>();
+    String dataSource = query.getDataSource().getTableNames().stream().findFirst().get();
+    boolean hasOnlyHistoricalSegments = true;
+    for(Map.Entry<Interval,List<SegmentDescriptor>> entry : overlapSegments.entrySet()){
+      List<SegmentDescriptor> segments = entry.getValue();
+      Hasher hasher = Hashing.sha1().newHasher();
+      StringBuilder intervalSegsTagId = new StringBuilder();
+      for (SegmentDescriptor seg : segments) {
+        //todo 过滤对实时可变segment的缓存
+        if (!hasOnlyHistoricalSegments) {
+          return null;
+        }
+        intervalSegsTagId.append(SegmentId.of(dataSource, seg.getInterval(), seg.getVersion(), seg.getPartitionNumber()));
+      }
+      hasher.putString(intervalSegsTagId,StandardCharsets.UTF_8);
+      currentIntervalEtagMap.put(entry.getKey(),StringUtils.encodeBase64String(hasher.hash().asBytes()));
+    }
+    return currentIntervalEtagMap;
+  }
+
+  private Map<Interval,List<SegmentDescriptor>> getOverlapSegments(List<SegmentDescriptor> segments,
+                                                      List<Interval> hitIntervalsTag) {
+    Map<Interval,List<SegmentDescriptor>> overlapSegments = new HashMap<>();
+    for (SegmentDescriptor seg : segments) {
+      for (Interval uInterval : hitIntervalsTag) {
+        if (uInterval.contains(seg.getInterval())) {
+          overlapSegments.computeIfAbsent(seg.getInterval(),I->new ArrayList<>()).add(seg);
+        }
+      }
+    }
+    return overlapSegments;
   }
 
   private List<Query> getResidualQueries(List<Query> optimizedQueries, List<Interval> residualIntervals) {
@@ -158,7 +259,7 @@ public class MaterializedViewQueryRunner<T> implements QueryRunner<T>
       List<SegmentDescriptor> residualSegs = getSegments(q).stream().filter(input -> {
         for (Interval uInterval : residualIntervals) {
           if (uInterval.overlaps(input.getInterval())) {
-            return uInterval.overlaps(input.getInterval());
+            return true;
           }
         }
         return false;
@@ -175,12 +276,17 @@ public class MaterializedViewQueryRunner<T> implements QueryRunner<T>
 
   private List<SegmentDescriptor> getSegments(Query query) {
     if (query instanceof GroupByQuery) {
-      return ((MultipleSpecificSegmentSpec)((GroupByQuery) query).getQuerySegmentSpec()).getDescriptors();
+      if(((GroupByQuery) query).getQuerySegmentSpec() instanceof MultipleSpecificSegmentSpec){
+        return ((MultipleSpecificSegmentSpec)((GroupByQuery) query).getQuerySegmentSpec()).getDescriptors();
+      }
     }else if(query instanceof TopNQuery){
-      return ((MultipleSpecificSegmentSpec)((TopNQuery) query).getQuerySegmentSpec()).getDescriptors();
+      if(((TopNQuery) query).getQuerySegmentSpec() instanceof MultipleSpecificSegmentSpec){
+        return ((MultipleSpecificSegmentSpec)((TopNQuery) query).getQuerySegmentSpec()).getDescriptors();
+      }
     }else{
       throw new UnsupportedOperationException("Unsupported query type");
     }
+    return Collections.emptyList();
   }
 
   /**

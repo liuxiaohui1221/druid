@@ -28,7 +28,9 @@ import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.cache.CacheKey;
 import org.apache.druid.segment.StringDimensionDictionary;
 import org.apache.druid.segment.column.ColumnType;
+import org.joda.time.Interval;
 
+import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -204,6 +206,10 @@ public interface CacheStrategy<T, CacheType, QueryType extends Query<T>>
 
   default Sequence<T> reAggregateCacheSequence(Sequence<T> originalResult
   )
+  {
+    return this.reAggregateCacheSequence(originalResult, null);
+  }
+  default Sequence<T> reAggregateCacheSequence(Sequence<T> originalResult,@Nullable List<Interval> hitIntervals)
   {
     return originalResult;
   }
