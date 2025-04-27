@@ -29,6 +29,7 @@ import com.google.common.primitives.Bytes;
 import org.apache.druid.client.CacheUtil;
 import org.apache.druid.client.cache.CacheConfig;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.MergeSequence;
 import org.apache.druid.java.util.common.guava.Sequence;
@@ -48,6 +49,7 @@ import org.apache.druid.query.spec.MultipleSpecificSegmentSpec;
 import org.apache.druid.query.topn.TopNQuery;
 import org.apache.druid.server.QueryResource;
 import org.apache.druid.timeline.SegmentId;
+import org.joda.time.DateTime;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
@@ -179,7 +181,9 @@ public class MaterializedViewQueryRunner<T> implements QueryRunner<T>
         }
         //查询语句匹配，且重叠区间的segment集合没有变化
         if(currentEtagMap != null && cacheSegmentsNoChange(currentEtagMap, prevCacheEtagMap, hitIntervalsTag,
-                                                           query.getGranularity())){
+                                                           determineSegmentGranularity(segments.get(0))
+
+        )){
           if(hitQueryTag instanceof List){//缓存未命中的区间
             //查询结果部分命中缓存，返回部分结果，并构造剩余子查询
             List<Interval> residualIntervals = (List<Interval>)hitQueryTag;
@@ -193,6 +197,37 @@ public class MaterializedViewQueryRunner<T> implements QueryRunner<T>
     return optimizedQueries;
   }
 
+  public static Granularity determineSegmentGranularity(SegmentDescriptor descriptor) {
+    Interval interval = descriptor.getInterval();
+    DateTime start = interval.getStart();
+    DateTime end = interval.getEnd();
+
+    // 按从粗到细的顺序检查粒度
+    Granularity[] granularities = {
+        Granularities.YEAR,
+        Granularities.MONTH,
+        Granularities.WEEK,
+        Granularities.DAY,
+        Granularities.HOUR,
+        Granularities.MINUTE,
+        Granularities.SECOND
+    };
+
+    for (Granularity granularity : granularities) {
+      DateTime truncatedStart = granularity.bucketStart(start);
+      if (!truncatedStart.equals(start)) {
+        continue;
+      }
+
+      DateTime nextBucketStart = granularity.increment(truncatedStart);
+      if (nextBucketStart.equals(end)) {
+        return granularity;
+      }
+    }
+
+    throw new IllegalArgumentException("无法为Interval " + interval + " 找到匹配的分区粒度。");
+  }
+
   /**
    *
    * @param currentEtag
@@ -201,11 +236,11 @@ public class MaterializedViewQueryRunner<T> implements QueryRunner<T>
    * @return
    */
   private boolean cacheSegmentsNoChange(Map<Interval, String> currentEtag, Map<Interval, String> prevEtag,
-                                        List<Interval> hitIntervalsTag, Granularity granularity) {
+                                        List<Interval> hitIntervalsTag, Granularity segGranularity) {
     //检查所有缓存命中的区间hitIntervalsTag中两个Map中相同key对应相应的tag是否相等。
     for (Interval interval : hitIntervalsTag) {
-      //interval按granularity划分多个intervals进行比较
-      Iterator<Interval> iterator = granularity.getIterable(interval).iterator();
+      //interval按分区granularity划分多个intervals进行比较
+      Iterator<Interval> iterator = segGranularity.getIterable(interval).iterator();
       while (iterator.hasNext()) {
         Interval subInterval = iterator.next();
         if(currentEtag.containsKey(subInterval)&& prevEtag.containsKey(subInterval)){

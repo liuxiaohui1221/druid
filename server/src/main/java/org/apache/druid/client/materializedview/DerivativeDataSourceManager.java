@@ -184,12 +184,22 @@ public class DerivativeDataSourceManager
     ImmutableMap<String, DerivativeDataSource> stringDerivativeDataSourceImmutableMap = ImmutableMap.copyOf(
         DERIVATIVES_REF.get().getOrDefault(datasource, new HashMap<>()));
     if (!stringDerivativeDataSourceImmutableMap.containsKey(datasource)) {
+      log.error("WTF? current derivative[%s]'s sub derivative dataSources not exists! ", datasource);
+      throw new ISE("WTF? current derivative[%s]'s sub derivative dataSources not exists! ", datasource);
+    }
+    return stringDerivativeDataSourceImmutableMap.get(datasource).getBaseDataSource();
+  }
+  public DerivativeDataSource getDerivativeDataSource(String datasource)
+  {
+    ImmutableMap<String, DerivativeDataSource> stringDerivativeDataSourceImmutableMap = ImmutableMap.copyOf(
+        DERIVATIVES_REF.get().getOrDefault(datasource, new HashMap<>()));
+    if (!stringDerivativeDataSourceImmutableMap.containsKey(datasource)) {
       log.error("WTF? current derivative[%s]'s sub derivative dataSources need sorted by granularity desc and need "
                 + "contains itself.", datasource);
       throw new ISE("WTF? current derivative[%s]'s sub derivative dataSources need sorted by granularity desc and "
                     + "need ", datasource);
     }
-    return stringDerivativeDataSourceImmutableMap.get(datasource).getBaseDataSource();
+    return stringDerivativeDataSourceImmutableMap.get(datasource);
   }
 
   public static ImmutableMap<String, HashMap<String, DerivativeDataSource>> getAllDerivatives()
