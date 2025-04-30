@@ -34,7 +34,8 @@ public class MetadataStorageTablesConfig
 
   public static MetadataStorageTablesConfig fromBase(String base)
   {
-    return new MetadataStorageTablesConfig(base, null, null, null, null, null, null, null, null, null, null, null, null);
+    return new MetadataStorageTablesConfig(base, null, null, null, null, null, null, null, null, null, null, null,
+                                           null, null, null, null);
   }
 
   public static final String TASK_ENTRY_TYPE = "task";
@@ -84,6 +85,15 @@ public class MetadataStorageTablesConfig
   @JsonProperty("segmentSchemas")
   private final String segmentSchemasTable;
 
+  @JsonProperty("pre_query_template")
+  private final String prequeryTemplateTable;
+
+  @JsonProperty("cacheInfo")
+  private final String cacheInfoTable;
+
+  @JsonProperty("qLearningState")
+  private final String qLearningStateTable;
+
   @JsonCreator
   public MetadataStorageTablesConfig(
       @JsonProperty("base") String base,
@@ -98,7 +108,10 @@ public class MetadataStorageTablesConfig
       @JsonProperty("audit") String auditTable,
       @JsonProperty("supervisors") String supervisorTable,
       @JsonProperty("upgradeSegments") String upgradeSegmentsTable,
-      @JsonProperty("segmentSchemas") String segmentSchemasTable
+      @JsonProperty("segmentSchemas") String segmentSchemasTable,
+      @JsonProperty("preQueryTemplate") String prequeryTemplateTable,
+      @JsonProperty("cacheInfo") String cacheInfoTable,
+      @JsonProperty("qLearningState") String qLearningStateTable
   )
   {
     this.base = (base == null) ? DEFAULT_BASE : base;
@@ -118,6 +131,9 @@ public class MetadataStorageTablesConfig
     this.auditTable = makeTableName(auditTable, "audit");
     this.supervisorTable = makeTableName(supervisorTable, "supervisors");
     this.segmentSchemasTable = makeTableName(segmentSchemasTable, "segmentSchemas");
+    this.prequeryTemplateTable = makeTableName(prequeryTemplateTable,"pre_query_template");
+    this.cacheInfoTable = makeTableName(cacheInfoTable,"cache_info");
+    this.qLearningStateTable = makeTableName(qLearningStateTable,"q_learning_state");
   }
 
   private String makeTableName(String explicitTableName, String defaultSuffix)
@@ -215,5 +231,20 @@ public class MetadataStorageTablesConfig
   public String getSegmentSchemasTable()
   {
     return segmentSchemasTable;
+  }
+
+  public String getPrequeryTemplateTable()
+  {
+    return prequeryTemplateTable;
+  }
+
+  public String getCacheInfoTable()
+  {
+    return cacheInfoTable;
+  }
+
+  public String getqLearningStateTable()
+  {
+    return qLearningStateTable;
   }
 }

@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
+import org.joda.time.Interval;
 
 import java.util.Objects;
 import java.util.Set;
@@ -35,12 +36,14 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
   private final ClientTaskGranularitySpec granularitySpec;
   private final Set<String> dimensions;
   private final Set<String> metrics;
+  private final Set<Interval> intervals;
   @JsonCreator
   public DerivativeDataSourceMetadata(
       @JsonProperty("baseDataSource") String baseDataSource,
       @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec,
       @JsonProperty("dimensions") Set<String> dimensions,
-      @JsonProperty("metrics") Set<String> metrics
+      @JsonProperty("metrics") Set<String> metrics,
+      @JsonProperty("intervals") Set<Interval> intervals
   )
   {
     Preconditions.checkArgument(
@@ -54,7 +57,7 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
     this.baseDataSource = baseDataSource;
     this.dimensions = Preconditions.checkNotNull(dimensions, "dimensions cannot be null. This is not a valid DerivativeDataSourceMetadata.");
     this.metrics = Preconditions.checkNotNull(metrics, "metrics cannot be null. This is not a valid DerivativeDataSourceMetadata.");
-
+    this.intervals = Preconditions.checkNotNull(intervals, "intervals cannot be null. This is not a valid DerivativeDataSourceMetadata.");
   }
 
   @JsonProperty("granularitySpec")
@@ -78,6 +81,11 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
   public Set<String> getMetrics()
   {
     return metrics;
+  }
+
+  @JsonProperty("intervals")
+  public Set<Interval> getIntervals(){
+    return intervals;
   }
 
   @Override

@@ -214,22 +214,29 @@ public class DerivativeDataSourceManager
     }
     String datasourceName = ((TableDataSource) query.getDataSource()).getName();
     if (DERIVATIVES_REF.get().containsKey(datasourceName)) {
-      log.info("current datasource[%s] is materialized view.", datasourceName);
+      log.info("current datasource[%s] is materializedview.", datasourceName);
       return true;
     }
-    log.info("current datasource[%s] is not materialized view. derivatives size[%s]", datasourceName,
+    log.info("current datasource[%s] is not materializedview. derivatives size[%s]", datasourceName,
              DERIVATIVES_REF.get().size());
     return false;
   }
 
   private void updateDerivatives()
   {
+    final String sql;
+    if(config.isEnablePreQuery()){
+      sql = "SELECT DISTINCT dataSource,commit_metadata_payload from %s dpqt inner "
+            + "join %s dds on dpqt.template_name = dds.dataSource";
+    }else{
+      sql = "SELECT DISTINCT dataSource,commit_metadata_payload FROM %1$s";
+    }
     List<Pair<String, DerivativeDataSourceMetadata>> derivativesInDatabase = connector.retryWithHandle(
         handle ->
             handle
                 .createQuery(
                     StringUtils.format(
-                        "SELECT DISTINCT dataSource,commit_metadata_payload FROM %1$s",
+                        sql,
                         dbTables.get().getDataSourceTable()
                     )
                 )

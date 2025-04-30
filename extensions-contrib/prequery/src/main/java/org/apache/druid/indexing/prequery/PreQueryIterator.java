@@ -17,26 +17,11 @@
  * under the License.
  */
 
-package org.apache.druid.client.materializedview;
+package org.apache.druid.indexing.prequery;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.joda.time.Period;
+import java.util.Iterator;
 
-public class MaterializedViewConfig
+public abstract class PreQueryIterator<T> implements Iterator<T>
 {
-  @JsonProperty
-  private Period pollDuration = new Period("PT1M");
-  @JsonProperty
-  private boolean enablePreQuery = true;
-
-  public boolean isEnablePreQuery()
-  {
-    return enablePreQuery;
-  }
-
-  public Period getPollDuration()
-  {
-    return pollDuration;
-  }
-
+  abstract void reset();
 }

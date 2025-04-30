@@ -32,6 +32,7 @@ import com.google.common.hash.Hashing;
 import com.google.common.io.BaseEncoding;
 import com.google.inject.Inject;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.error.InvalidInput;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.IndexerMetadataStorageCoordinator;
@@ -44,6 +45,7 @@ import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.jackson.JacksonUtils;
 import org.apache.druid.java.util.common.lifecycle.LifecycleStart;
 import org.apache.druid.java.util.common.logger.Logger;
@@ -2486,6 +2488,87 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
     return JacksonUtils.readValue(jsonMapper, bytes, DataSourceMetadata.class);
   }
 
+  @Nullable
+  @Override
+  public List<Pair<String, DerivativeDataSourceMetadata>> retrievePreQueryDataSourceMetadata(String prequeryDataSource)
+  {
+    //select dds.dataSource,dds.commit_metadata_payload ?
+    List<Pair<String, DerivativeDataSourceMetadata>> derivativesInDatabase = connector.retryWithHandle(
+        handle ->
+            handle
+                .createQuery(
+                    StringUtils.format(
+                        "SELECT DISTINCT dataSource,commit_metadata_payload from %s dpqt inner "
+                        + "join %s dds on dpqt.template_name = dds.dataSource where dpqt.status=0 and dpqt.table_name "
+                        + "= %s",
+                        dbTables.getPrequeryTemplateTable(),dbTables.getDataSourceTable(),prequeryDataSource
+                    )
+                )
+                .map((int index, ResultSet r, StatementContext ctx) -> {
+                  String datasourceName = r.getString("dataSource");
+                  DataSourceMetadata payload = JacksonUtils.readValue(
+                      jsonMapper,
+                      r.getBytes("commit_metadata_payload"),
+                      DataSourceMetadata.class
+                  );
+                  if (!(payload instanceof DerivativeDataSourceMetadata)) {
+                    return null;
+                  }
+                  DerivativeDataSourceMetadata metadata = (DerivativeDataSourceMetadata) payload;
+                  return new Pair<>(datasourceName, metadata);
+                })
+                .list()
+    );
+    return derivativesInDatabase;
+  }
+
+  /* 新增方法：处理模板创建 */
+  @Override
+  public void createNewTemplate(String templateName, String tableName, String initialInterval,List<String> dims,
+                                Granularity granularity,int stateId,String payload) throws IOException {
+    connector.lookupWithHandle(handle -> {
+      // 1. 检查模板是否存在
+      if (!templateExists(handle, templateName)) {
+        // 2. 插入模板记录
+        insertNewTemplate(handle, templateName, tableName, initialInterval);
+
+        // 3. 创建初始数据源记录
+        createInitialDataSource(handle, templateName, initialInterval);
+      }
+      return null;
+    });
+  }
+
+  // 检查模板是否存在
+  private boolean templateExists(Handle handle, String templateName) {
+    return handle.createQuery(
+                     "SELECT COUNT(*) FROM " + dbTables.getPrequeryTemplateTable() +
+                     " WHERE template_name = :name")
+                 .bind("name", templateName)
+                 .mapTo(Integer.class)
+                 .first() > 0;
+  }
+
+  // 插入新模板记录
+  private void insertNewTemplate(
+      Handle handle,
+      String templateName,
+      String tableName,
+      String interval
+  ) {
+    handle.createStatement(
+              StringUtils.format(
+                  "INSERT INTO %s (template_name, table_name, interval, status, granularity, dims, state_id, payload) " +
+                  "VALUES (:name, :table, :interval, 0, '', '', 0, '')",
+                  dbTables.getPrequeryTemplateTable()
+              )
+          )
+          .bind("name", templateName)
+          .bind("table", tableName)
+          .bind("interval", interval)
+          .execute();
+  }
+
   /**
    * Read dataSource metadata as bytes, from a specific handle. Returns null if there is no metadata.
    */
@@ -2887,6 +2970,8 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
             .execute()
     );
   }
+
+
 
   private static class PendingSegmentsRecord
   {

@@ -17,26 +17,25 @@
  * under the License.
  */
 
-package org.apache.druid.client.materializedview;
+package org.apache.druid.indexing.prequery;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.joda.time.Period;
+import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.timeline.DataSegment;
+import org.joda.time.Interval;
 
-public class MaterializedViewConfig
+import java.util.List;
+import java.util.Map;
+import java.util.SortedMap;
+
+public class ScoreMaterializedViewSearchPolicy implements PreQuerySearchPolicy
 {
-  @JsonProperty
-  private Period pollDuration = new Period("PT1M");
-  @JsonProperty
-  private boolean enablePreQuery = true;
-
-  public boolean isEnablePreQuery()
+  @Override
+  public ScoreMaterializedViewIterator reset(
+      Map<Interval, List<DataSegment>> baseSegments,
+      SortedMap<Interval, Pair<Boolean, String>> sortedToBuildVersion,
+      PolicyConfig config
+  )
   {
-    return enablePreQuery;
+    return new ScoreMaterializedViewIterator(baseSegments, sortedToBuildVersion, config);
   }
-
-  public Period getPollDuration()
-  {
-    return pollDuration;
-  }
-
 }

@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.druid.indexing.materializedview;
+package org.apache.druid.indexing.prequery;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.annotations.VisibleForTesting;
@@ -26,12 +26,12 @@ import org.apache.druid.indexer.partitions.HashedPartitionsSpec;
 import org.apache.druid.indexer.partitions.PartitionsSpec;
 import org.joda.time.Period;
 
-public class MaterializedViewTaskConfig 
+public class PreQueryTaskConfig
 {
   @JsonProperty
   private Period taskCheckDuration = new Period("PT1M");
   @JsonProperty
-  private Period hadoopIntervalCheckDuration = new Period("P3D");
+  private Period hadoopIntervalCheckDuration = new Period("P1D");
   @JsonProperty
   private boolean enableTruncateIngestionTime = true;
   @JsonProperty
@@ -40,13 +40,6 @@ public class MaterializedViewTaskConfig
   private PartitionsSpec backupOverwritePartitionsSpec = getDefaultPartitionsSpec(true, null);
   @JsonProperty
   private PartitionsSpec backupAppendingPartitionsSpec = getDefaultPartitionsSpec(false, null);
-  @JsonProperty
-  private boolean enablePreQuery = true;
-
-  public boolean isEnablePreQuery()
-  {
-    return enablePreQuery;
-  }
 
   public Period getTaskCheckDuration()
   {

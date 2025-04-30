@@ -19,6 +19,7 @@
 
 package org.apache.druid.indexing.overlord;
 
+import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.metadata.PendingSegmentRecord;
 import org.apache.druid.metadata.ReplaceTaskLock;
@@ -399,7 +400,15 @@ public interface IndexerMetadataStorageCoordinator
    * Retrieves data source's metadata from the metadata store. Returns null if there is no metadata.
    */
   @Nullable DataSourceMetadata retrieveDataSourceMetadata(String dataSource);
+  @Nullable List<Pair<String, DerivativeDataSourceMetadata>> retrievePreQueryDataSourceMetadata(String prequeryDataSource);
 
+  /**
+   * Inserts a new entry for 'dataSource' in the dataSource metadata table.
+   * @param templateName 预查询模板中维度字段dims和聚合granularity的组合hash值
+   * @param tableName 预查询模板中表名
+   * @param initialInterval 预查询模板中时间范围
+   */
+  void createNewTemplate(String templateName, String tableName, String initialInterval);
   /**
    * Removes entry for 'dataSource' from the dataSource metadata table.
    *
