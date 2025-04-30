@@ -223,7 +223,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     DerivativeDataSourceManager mockClient = EasyMock.createMock(DerivativeDataSourceManager.class);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(baseDataSource)).andStubReturn(ImmutableMap.of());
     EasyMock.expect(mockClient.getDirectBaseDataSource(baseDataSource)).andStubReturn(null);
-    EasyMock.expect(mockClient.getRootBaseDataSource(baseDataSource)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(baseDataSource)).andStubReturn(baseDataSource);
     // dataSource-->baseDataSource
     HashMap<String, String> subDataSources1 = new HashMap<>();
     subDataSources1.put(dataSource, baseDataSource);
@@ -234,7 +234,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSource))
             .andStubReturn(ImmutableMap.copyOf(subDs1));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSource)).andStubReturn(baseDataSource);
-    EasyMock.expect(mockClient.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
 
     // dataSourceDay-->dataSource-->baseDataSource
     HashMap<String, String> subDataSources2 = new HashMap<>();
@@ -247,12 +247,12 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSourceDay))
             .andStubReturn(ImmutableMap.copyOf(subDs2));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceDay)).andStubReturn(dataSource);
-    EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceDay)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(dataSourceDay)).andStubReturn(baseDataSource);
 
     SortedSet<DerivativeDataSource> expectedSortedDers=
         new TreeSet<>(subDs2.values());
     Pair<Granularity,Set<String>> requiredFields = MaterializedViewUtils.getRequiredFields(query);
-    EasyMock.expect(mockClient.getCandidateSortedDerivatives(baseDataSource, requiredFields.rhs, query.getGranularity())).andStubReturn(expectedSortedDers);
+    EasyMock.expect(DerivativeDataSourceManager.getCandidateSortedDerivatives(baseDataSource, requiredFields.rhs, query.getGranularity())).andStubReturn(expectedSortedDers);
 
     EasyMock.replay(mockClient);
     setupViews(mockClient);
@@ -264,7 +264,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     DerivativeDataSourceManager mockClient = EasyMock.createMock(DerivativeDataSourceManager.class);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(baseDataSource)).andStubReturn(ImmutableMap.of());
     EasyMock.expect(mockClient.getDirectBaseDataSource(baseDataSource)).andStubReturn(null);
-    EasyMock.expect(mockClient.getRootBaseDataSource(baseDataSource)).andStubReturn(null);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(baseDataSource)).andStubReturn(null);
     // dataSourceHour --> baseDataSource
     HashMap<String, String> subDataSources1 = new HashMap<>();
     subDataSources1.put(dataSourceHour, baseDataSource);
@@ -272,7 +272,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             .andStubReturn(ImmutableMap.copyOf(createMultiSubDerivativeDataSources(Granularities.HOUR,
                                                                                    subDataSources1)));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceHour)).andStubReturn(baseDataSource);
-    EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceHour)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(dataSourceHour)).andStubReturn(baseDataSource);
     // dataSourceTwoHour --> dataSourceHour --> baseDataSource
     HashMap<String, String> subDataSources2 = new HashMap<>(subDataSources1);
     subDataSources2.put(dataSourceTwoHour, dataSourceHour);
@@ -280,7 +280,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             .andStubReturn(ImmutableMap.copyOf(createMultiSubDerivativeDataSources(Granularities.TWO_HOUR,
                                                                                    subDataSources2)));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceTwoHour)).andStubReturn(dataSourceHour);
-    EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceTwoHour)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(dataSourceTwoHour)).andStubReturn(baseDataSource);
     // dataSourceDay --> dataSourceTwoHour --> dataSourceHour --> baseDataSource
     HashMap<String, String> subDataSources3 = new HashMap<>(subDataSources2);
     subDataSources3.put(dataSourceDay, dataSourceTwoHour);
@@ -288,7 +288,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             .andStubReturn(ImmutableMap.copyOf(createMultiSubDerivativeDataSources(Granularities.DAY,
                                                                                    subDataSources3)));
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSourceDay)).andStubReturn(dataSourceTwoHour);
-    EasyMock.expect(mockClient.getRootBaseDataSource(dataSourceDay)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(dataSourceDay)).andStubReturn(baseDataSource);
     EasyMock.replay(mockClient);
     setupViews(mockClient);
     return mockClient;
@@ -302,7 +302,7 @@ public class DatasourceOptimizerTest extends CuratorTestBase
     EasyMock.expect(mockClient.getSubDerivativeDataSources(baseDataSource)).andStubReturn(ImmutableMap.of());
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSource)).andStubReturn(createSubDerivativeDataSources());
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSource)).andStubReturn(baseDataSource);
-    EasyMock.expect(mockClient.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
     EasyMock.replay(mockClient);
     setupViews(mockClient);
     optimizer = new DataSourceOptimizer(brokerServerView, mockClient);
@@ -316,7 +316,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     // insert base datasource segments
@@ -493,7 +494,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
      /*
@@ -819,7 +821,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     // insert base datasource segments
@@ -1054,7 +1057,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1064,7 +1068,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSourceDay, metadata2);
@@ -1301,7 +1306,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1311,7 +1317,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSourceDay, metadata2);
@@ -1544,7 +1551,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1554,7 +1562,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     DerivativeDataSourceMetadata metadata3 = new DerivativeDataSourceMetadata(
         dataSourceDay,
@@ -1564,7 +1573,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     metadataStorageCoordinator.insertDataSourceMetadata(baseDataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata2);
@@ -1786,7 +1796,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     DerivativeDataSourceMetadata metadata2 = new DerivativeDataSourceMetadata(
         dataSource,
@@ -1796,7 +1807,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     DerivativeDataSourceMetadata metadata3 = new DerivativeDataSourceMetadata(
         dataSourceDay,
@@ -1806,7 +1818,8 @@ public class DatasourceOptimizerTest extends CuratorTestBase
             true
         ),
         Collections.<String>emptySet(),
-        Collections.<String>emptySet()
+        Collections.<String>emptySet(),
+        null
     );
     metadataStorageCoordinator.insertDataSourceMetadata(baseDataSource, metadata);
     metadataStorageCoordinator.insertDataSourceMetadata(dataSource, metadata2);

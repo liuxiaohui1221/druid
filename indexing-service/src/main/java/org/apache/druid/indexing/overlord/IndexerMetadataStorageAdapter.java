@@ -19,7 +19,11 @@
 
 package org.apache.druid.indexing.overlord;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
 import com.google.inject.Inject;
+import org.apache.druid.client.materializedview.DerivativeDataSourceCreationParams;
 import org.apache.druid.error.InvalidInput;
 import org.apache.druid.indexer.TaskInfo;
 import org.apache.druid.indexer.TaskStatus;
@@ -74,5 +78,11 @@ public class IndexerMetadataStorageAdapter
     }
 
     return indexerMetadataStorageCoordinator.deletePendingSegmentsCreatedInInterval(dataSource, deleteInterval);
+  }
+
+  public void createTemplate(String dataSource, DerivativeDataSourceCreationParams params)
+      throws JsonProcessingException
+  {
+    indexerMetadataStorageCoordinator.createNewTemplate(dataSource,params);
   }
 }

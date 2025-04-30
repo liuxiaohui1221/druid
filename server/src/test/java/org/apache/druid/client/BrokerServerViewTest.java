@@ -851,7 +851,7 @@ public class BrokerServerViewTest extends CuratorTestBase
     DerivativeDataSourceManager mockClient = EasyMock.createMock(DerivativeDataSourceManager.class);
     EasyMock.expect(mockClient.getSubDerivativeDataSources(dataSource)).andStubReturn(createSubDerivativeDataSources());
     EasyMock.expect(mockClient.getDirectBaseDataSource(dataSource)).andStubReturn(baseDataSource);
-    EasyMock.expect(mockClient.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
+    EasyMock.expect(DerivativeDataSourceManager.getRootBaseDataSource(dataSource)).andStubReturn(baseDataSource);
     EasyMock.replay(mockClient);
     brokerServerView = new BrokerServerView(
         EasyMock.createMock(QueryToolChestWarehouse.class),

@@ -85,8 +85,8 @@ public class MetadataStorageTablesConfig
   @JsonProperty("segmentSchemas")
   private final String segmentSchemasTable;
 
-  @JsonProperty("pre_query_template")
-  private final String prequeryTemplateTable;
+  @JsonProperty("preQueryTemplate")
+  private final String preQueryTemplateTable;
 
   @JsonProperty("cacheInfo")
   private final String cacheInfoTable;
@@ -109,7 +109,7 @@ public class MetadataStorageTablesConfig
       @JsonProperty("supervisors") String supervisorTable,
       @JsonProperty("upgradeSegments") String upgradeSegmentsTable,
       @JsonProperty("segmentSchemas") String segmentSchemasTable,
-      @JsonProperty("preQueryTemplate") String prequeryTemplateTable,
+      @JsonProperty("preQueryTemplate") String preQueryTemplateTable,
       @JsonProperty("cacheInfo") String cacheInfoTable,
       @JsonProperty("qLearningState") String qLearningStateTable
   )
@@ -131,7 +131,7 @@ public class MetadataStorageTablesConfig
     this.auditTable = makeTableName(auditTable, "audit");
     this.supervisorTable = makeTableName(supervisorTable, "supervisors");
     this.segmentSchemasTable = makeTableName(segmentSchemasTable, "segmentSchemas");
-    this.prequeryTemplateTable = makeTableName(prequeryTemplateTable,"pre_query_template");
+    this.preQueryTemplateTable = makeTableName(preQueryTemplateTable,"pre_query_template");
     this.cacheInfoTable = makeTableName(cacheInfoTable,"cache_info");
     this.qLearningStateTable = makeTableName(qLearningStateTable,"q_learning_state");
   }
@@ -233,9 +233,9 @@ public class MetadataStorageTablesConfig
     return segmentSchemasTable;
   }
 
-  public String getPrequeryTemplateTable()
+  public String getPreQueryTemplateTable()
   {
-    return prequeryTemplateTable;
+    return preQueryTemplateTable;
   }
 
   public String getCacheInfoTable()

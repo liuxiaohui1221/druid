@@ -26,6 +26,7 @@ import com.google.common.base.Preconditions;
 import org.apache.druid.client.materializedview.ClientTaskGranularitySpec;
 import org.apache.druid.java.util.common.granularity.Granularity;
 import org.apache.druid.java.util.common.guava.Comparators;
+import org.joda.time.Interval;
 
 import java.util.Objects;
 import java.util.Set;
@@ -36,19 +37,26 @@ public class DerivativeDataSource implements Comparable<DerivativeDataSource>
   private final String baseDataSource;
   private final ClientTaskGranularitySpec granularitySpec;
   private final Set<String> columns;
+  private final Set<String> dimensions;
+  private Set<Interval> intervals;
 
   @JsonCreator
   public DerivativeDataSource(
       @JsonProperty("dataSource") String dataSource,
       @JsonProperty("baseDataSource") String baseDataSource,
       @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec,
-      @JsonProperty("columns") Set<String> columns
+      @JsonProperty("columns") Set<String> columns,
+      @JsonProperty("dimensions") Set<String> dimensions,
+      @JsonProperty("intervals") Set<Interval> intervals
+
   )
   {
     this.dataSource = Preconditions.checkNotNull(dataSource, "dataSource");
     this.baseDataSource = Preconditions.checkNotNull(baseDataSource, "baseDataSource");
     this.granularitySpec = Preconditions.checkNotNull(granularitySpec, "granularitySpec");
     this.columns = columns;
+    this.dimensions = dimensions;
+    this.intervals = intervals;
   }
 
   @VisibleForTesting
@@ -58,7 +66,9 @@ public class DerivativeDataSource implements Comparable<DerivativeDataSource>
       Granularity segmentGranularity
   )
   {
-    this(dataSource, baseDataSource, new ClientTaskGranularitySpec(segmentGranularity, segmentGranularity, true),null);
+    this(dataSource, baseDataSource, new ClientTaskGranularitySpec(segmentGranularity, segmentGranularity, true), null,
+         null,null
+    );
   }
 
   @JsonCreator
@@ -85,6 +95,10 @@ public class DerivativeDataSource implements Comparable<DerivativeDataSource>
     return columns;
   }
 
+  @JsonCreator
+  public Set<String> getDimensions(){
+    return dimensions;
+  }
   @Override
   public int compareTo(DerivativeDataSource o)
   {
@@ -140,5 +154,9 @@ public class DerivativeDataSource implements Comparable<DerivativeDataSource>
            ", baseDataSource='" + baseDataSource + '\'' +
            ", granularitySpec=" + granularitySpec +
            '}';
+  }
+
+  public Set<Interval> getIntervals() {
+    return intervals;
   }
 }

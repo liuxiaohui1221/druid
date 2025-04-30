@@ -57,7 +57,7 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
     this.baseDataSource = baseDataSource;
     this.dimensions = Preconditions.checkNotNull(dimensions, "dimensions cannot be null. This is not a valid DerivativeDataSourceMetadata.");
     this.metrics = Preconditions.checkNotNull(metrics, "metrics cannot be null. This is not a valid DerivativeDataSourceMetadata.");
-    this.intervals = Preconditions.checkNotNull(intervals, "intervals cannot be null. This is not a valid DerivativeDataSourceMetadata.");
+    this.intervals = intervals;
   }
 
   @JsonProperty("granularitySpec")
@@ -128,13 +128,20 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
       return false;
     }
     DerivativeDataSourceMetadata that = (DerivativeDataSourceMetadata) o;
-    return Objects.equals(baseDataSource, that.baseDataSource) && Objects.equals(granularitySpec, that.granularitySpec);
+    return Objects.equals(baseDataSource, that.baseDataSource)
+           && Objects.equals(
+        granularitySpec,
+        that.granularitySpec
+    )
+           && Objects.equals(dimensions, that.dimensions)
+           && Objects.equals(metrics, that.metrics)
+           && Objects.equals(intervals, that.intervals);
   }
 
   @Override
   public int hashCode()
   {
-    return Objects.hash(baseDataSource, granularitySpec);
+    return Objects.hash(baseDataSource, granularitySpec, dimensions, metrics, intervals);
   }
 
   @Override
@@ -143,6 +150,9 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
     return "DerivativeDataSourceMetadata{" +
            "baseDataSource='" + baseDataSource + '\'' +
            ", granularitySpec=" + granularitySpec +
+           ", dimensions=" + dimensions +
+           ", metrics=" + metrics +
+           ", intervals=" + intervals +
            '}';
   }
 }

@@ -156,7 +156,7 @@ public class DerivativeDataSourceManager
    * @param datasource 实时数据源
    * @return
    */
-  public String getRootBaseDataSource(String datasource)
+  public static String getRootBaseDataSource(String datasource)
   {
     ImmutableMap<String, DerivativeDataSource> derivativeDataSources = ImmutableMap.copyOf(DERIVATIVES_REF.get()
                                                                                                           .getOrDefault(
@@ -188,18 +188,6 @@ public class DerivativeDataSourceManager
       throw new ISE("WTF? current derivative[%s]'s sub derivative dataSources not exists! ", datasource);
     }
     return stringDerivativeDataSourceImmutableMap.get(datasource).getBaseDataSource();
-  }
-  public DerivativeDataSource getDerivativeDataSource(String datasource)
-  {
-    ImmutableMap<String, DerivativeDataSource> stringDerivativeDataSourceImmutableMap = ImmutableMap.copyOf(
-        DERIVATIVES_REF.get().getOrDefault(datasource, new HashMap<>()));
-    if (!stringDerivativeDataSourceImmutableMap.containsKey(datasource)) {
-      log.error("WTF? current derivative[%s]'s sub derivative dataSources need sorted by granularity desc and need "
-                + "contains itself.", datasource);
-      throw new ISE("WTF? current derivative[%s]'s sub derivative dataSources need sorted by granularity desc and "
-                    + "need ", datasource);
-    }
-    return stringDerivativeDataSourceImmutableMap.get(datasource);
   }
 
   public static ImmutableMap<String, HashMap<String, DerivativeDataSource>> getAllDerivatives()
@@ -273,7 +261,9 @@ public class DerivativeDataSourceManager
                                    dataSource,
                                    baseDataSource,
                                    metadata.getGranularitySpec(),
-                                   columns
+                                   columns,
+                                   metadata.getDimensions(),
+                                   metadata.getIntervals()
                                );
                              })
                              .collect(Collectors.toList());
@@ -316,7 +306,15 @@ public class DerivativeDataSourceManager
     return groupDerivativeDataSources;
   }
 
-  public SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(String originBaseDataSource, Set<String> requiredFields,
+  /**
+   * 按查询聚合粒度从大到小排序
+   * @param originBaseDataSource
+   * @param requiredFields
+   * @param queryGranularity
+   * @return
+   */
+  public static SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(String originBaseDataSource,
+                                                                        Set<String> requiredFields,
                                                                        Granularity queryGranularity
   ) {
     SortedSet<DerivativeDataSource> results = new TreeSet<>();
@@ -331,7 +329,7 @@ public class DerivativeDataSourceManager
       }
     }
     for(DerivativeDataSource derivativeDataSource:derivativesWithRequiredFields){
-      if(originBaseDataSource.equals(this.getRootBaseDataSource(derivativeDataSource.getDataSource()))){
+      if(originBaseDataSource.equals(DerivativeDataSourceManager.getRootBaseDataSource(derivativeDataSource.getDataSource()))){
         results.add(derivativeDataSource);
       }
     }

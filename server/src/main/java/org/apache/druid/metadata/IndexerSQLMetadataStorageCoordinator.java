@@ -22,17 +22,22 @@ package org.apache.druid.metadata;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.io.BaseEncoding;
 import com.google.inject.Inject;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.druid.client.materializedview.DerivativeDataSourceCreationParams;
+import org.apache.druid.client.materializedview.DerivativeDataSourceInitializer;
 import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
+import org.apache.druid.client.materializedview.DruidGranularityUtils;
 import org.apache.druid.error.InvalidInput;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.IndexerMetadataStorageCoordinator;
@@ -2501,7 +2506,7 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
                         "SELECT DISTINCT dataSource,commit_metadata_payload from %s dpqt inner "
                         + "join %s dds on dpqt.template_name = dds.dataSource where dpqt.status=0 and dpqt.table_name "
                         + "= %s",
-                        dbTables.getPrequeryTemplateTable(),dbTables.getDataSourceTable(),prequeryDataSource
+                        dbTables.getPreQueryTemplateTable(),dbTables.getDataSourceTable(),prequeryDataSource
                     )
                 )
                 .map((int index, ResultSet r, StatementContext ctx) -> {
@@ -2524,25 +2529,40 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
 
   /* 新增方法：处理模板创建 */
   @Override
-  public void createNewTemplate(String templateName, String tableName, String initialInterval,List<String> dims,
-                                Granularity granularity,int stateId,String payload) throws IOException {
-    connector.lookupWithHandle(handle -> {
+  public void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params)
+      throws JsonProcessingException
+  {
+    //预查询模板中维度字段dims和聚合granularity的组合hash值
+    final Hasher hasher = Hashing.murmur3_32_fixed().newHasher();
+    List<String> sortDims = new ArrayList<>(params.getDimensions()).stream().sorted().collect(Collectors.toList());
+    hasher.putBytes(jsonMapper.writeValueAsBytes(sortDims));
+    Granularity queryGranularity = params.getQueryGranularity();
+    String truncGranularity = DruidGranularityUtils.determineTruncGranularity(queryGranularity).toLowerCase();
+    //将粒度取整为分钟，小时，天
+    final String templateNameSuffix = hasher.hash().toString();
+    final String templateName =
+        params.getDataSource() + "_" + truncGranularity + "_" + templateNameSuffix;
+    log.info("Creating new template: %s", templateName);
+    connector.retryTransaction(
+        (handle, transactionStatus) -> {
       // 1. 检查模板是否存在
       if (!templateExists(handle, templateName)) {
+        DerivativeDataSourceInitializer initializer = new DerivativeDataSourceInitializer();
+        DerivativeDataSourceMetadata dataSourceMetadata = initializer.apply(params);
         // 2. 插入模板记录
-        insertNewTemplate(handle, templateName, tableName, initialInterval);
+        insertNewTemplate(handle, templateName, tableName, params);
 
         // 3. 创建初始数据源记录
-        createInitialDataSource(handle, templateName, initialInterval);
+        this.insertDataSourceMetadata(templateName, dataSourceMetadata);
       }
       return null;
-    });
+    },3,getSqlMetadataMaxRetry());
   }
 
   // 检查模板是否存在
   private boolean templateExists(Handle handle, String templateName) {
     return handle.createQuery(
-                     "SELECT COUNT(*) FROM " + dbTables.getPrequeryTemplateTable() +
+                     "SELECT COUNT(*) FROM " + dbTables.getPreQueryTemplateTable() +
                      " WHERE template_name = :name")
                  .bind("name", templateName)
                  .mapTo(Integer.class)
@@ -2554,18 +2574,23 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
       Handle handle,
       String templateName,
       String tableName,
-      String interval
-  ) {
+      DerivativeDataSourceCreationParams param
+  ) throws JsonProcessingException
+  {
     handle.createStatement(
               StringUtils.format(
-                  "INSERT INTO %s (template_name, table_name, interval, status, granularity, dims, state_id, payload) " +
-                  "VALUES (:name, :table, :interval, 0, '', '', 0, '')",
-                  dbTables.getPrequeryTemplateTable()
+                  "INSERT INTO %s (template_name, table_name, `interval`, status, granularity, dims, state_id, payload) " +
+                  "VALUES (:name, :table, :interval, 0, :granularity, :dims, 0, :payload)",
+                  dbTables.getPreQueryTemplateTable()
               )
           )
           .bind("name", templateName)
           .bind("table", tableName)
-          .bind("interval", interval)
+          .bind("interval", param.getIntervalStr())
+          .bind("granularity", jsonMapper.writeValueAsBytes(param.getQueryGranularity()))
+          .bind("dims", jsonMapper.writeValueAsBytes(param.getDimensions()))
+          //.bind("state_id", param.getStateId())
+          .bind("payload", jsonMapper.writeValueAsBytes(param))
           .execute();
   }
 

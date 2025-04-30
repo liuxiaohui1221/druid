@@ -19,6 +19,8 @@
 
 package org.apache.druid.indexing.overlord;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import org.apache.druid.client.materializedview.DerivativeDataSourceCreationParams;
 import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.metadata.PendingSegmentRecord;
@@ -404,11 +406,10 @@ public interface IndexerMetadataStorageCoordinator
 
   /**
    * Inserts a new entry for 'dataSource' in the dataSource metadata table.
-   * @param templateName 预查询模板中维度字段dims和聚合granularity的组合hash值
    * @param tableName 预查询模板中表名
-   * @param initialInterval 预查询模板中时间范围
+   * @param params 预查询模板信息
    */
-  void createNewTemplate(String templateName, String tableName, String initialInterval);
+  void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params) throws JsonProcessingException;
   /**
    * Removes entry for 'dataSource' from the dataSource metadata table.
    *

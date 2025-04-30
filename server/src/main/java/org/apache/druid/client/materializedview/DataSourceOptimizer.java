@@ -126,7 +126,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
       return Collections.singletonList(query);
     }
     String queryDatasourceName = ((TableDataSource) query.getDataSource()).getName();
-    String originBaseDataSource = client.getRootBaseDataSource(queryDatasourceName);
+    String originBaseDataSource = DerivativeDataSourceManager.getRootBaseDataSource(queryDatasourceName);
     List<Interval> allQueryIntervals = new ArrayList<>(query.getIntervals());
     //选择满足聚合粒度和查询范围以及包含所需字段的最大粒度物化视图集：相同的时间分区随机选择一个物化视图，
     // 不同的时间分区的物化视图都只需各自选择1个，并限制在时间范围条件内进行物化视图下推。
@@ -139,8 +139,8 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
 //      query = query.withOverriddenGranularity(requiredFields.lhs).withOverriddenContext(context);
     }
     Map<String,List<Interval>> choosedTopDerivatives =
-        getMaximizeGranDerivatives(originBaseDataSource,allQueryIntervals,
-                                   client.getCandidateSortedDerivatives(originBaseDataSource,requiredFields.rhs,granularity
+        getMaximizeGranDerivatives(originBaseDataSource, allQueryIntervals,
+                                   DerivativeDataSourceManager.getCandidateSortedDerivatives(originBaseDataSource, requiredFields.rhs, granularity
                                                                         ));
     if (choosedTopDerivatives.isEmpty()) {
       return Collections.singletonList(query);

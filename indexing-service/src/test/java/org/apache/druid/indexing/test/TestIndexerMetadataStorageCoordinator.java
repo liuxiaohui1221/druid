@@ -19,10 +19,13 @@
 
 package org.apache.druid.indexing.test;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
+import org.apache.druid.client.materializedview.DerivativeDataSourceCreationParams;
+import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.IndexerMetadataStorageCoordinator;
 import org.apache.druid.indexing.overlord.SegmentCreateRequest;
@@ -64,6 +67,20 @@ public class TestIndexerMetadataStorageCoordinator implements IndexerMetadataSto
   public DataSourceMetadata retrieveDataSourceMetadata(String dataSource)
   {
     throw new UnsupportedOperationException();
+  }
+
+  @Nullable
+  @Override
+  public List<Pair<String, DerivativeDataSourceMetadata>> retrievePreQueryDataSourceMetadata(String prequeryDataSource)
+  {
+    return Collections.emptyList();
+  }
+
+  @Override
+  public void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params)
+      throws JsonProcessingException
+  {
+
   }
 
   @Override

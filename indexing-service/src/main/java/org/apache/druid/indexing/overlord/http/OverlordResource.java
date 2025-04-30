@@ -19,6 +19,7 @@
 
 package org.apache.druid.indexing.overlord.http;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
@@ -32,6 +33,7 @@ import com.sun.jersey.spi.container.ResourceFilters;
 import org.apache.druid.audit.AuditEntry;
 import org.apache.druid.audit.AuditManager;
 import org.apache.druid.client.indexing.ClientTaskQuery;
+import org.apache.druid.client.materializedview.DerivativeDataSourceCreationParams;
 import org.apache.druid.common.config.ConfigManager.SetResult;
 import org.apache.druid.common.config.JacksonConfigManager;
 import org.apache.druid.error.DruidException;
@@ -424,7 +426,19 @@ public class OverlordResource
     );
   }
 
-
+  @POST
+  @Path("/datasources/{dataSource}/createPreQueryTemplate")
+  @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(DatasourceResourceFilter.class)
+  public Response createPreQueryTemplate(
+      @PathParam("dataSource") final String dataSource,
+      DerivativeDataSourceCreationParams params,
+      @Context HttpServletRequest request
+  ) throws JsonProcessingException
+  {
+    indexerMetadataStorageAdapter.createTemplate(dataSource, params);
+    return Response.ok().entity(null).build();
+  }
   @GET
   @Path("/getNonLockIntervals/{dataSource}")
   @Produces(MediaType.APPLICATION_JSON)
