@@ -97,7 +97,7 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
   private final Set<String> dimensions;
 
   public PreQuerySupervisorSpec(
-      @JsonProperty("inputSpec") InputDataSourceSpec inputDataSourceSpec,
+      @JsonProperty("inputDataSourceSpec") InputDataSourceSpec inputDataSourceSpec,
       @JsonProperty("tuningConfig") @Nullable ParallelIndexTuningConfig tuningConfig,
       @JsonProperty("policyConfig") @Nullable PolicyConfig policyConfig,
       @JsonProperty("context") @Nullable Map<String, Object> context,
@@ -208,14 +208,18 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
     return task;
   }
 
-  private AggregatorFactory[] takeMetricsSpec(AggregatorFactory[] metricsSpec, Set<String> metrics) {
-    List<AggregatorFactory> subMetrics = new ArrayList<>();
-    for(AggregatorFactory aggregatorFactory : metricsSpec){
+  /**
+   * 将baseDataSource中metric，dims输出字段名作为当前任务的输入字段名
+   * @return
+   */
+  private AggregatorFactory[] takeMetricsSpec(AggregatorFactory[] baseMetrics, Set<String> derivativeMetrics) {
+    List<AggregatorFactory> subDerivativeMetrics = new ArrayList<>();
+    for(AggregatorFactory aggregatorFactory : baseMetrics){
       if(metrics.contains(aggregatorFactory.getName())){
-        subMetrics.add(aggregatorFactory);
+        subDerivativeMetrics.add(aggregatorFactory);
       }
     }
-    return subMetrics.toArray(new AggregatorFactory[0]);
+    return subDerivativeMetrics.toArray(new AggregatorFactory[0]);
   }
 
   private DimensionsSpec takeDimensionsSpec(DimensionsSpec dimensionsSpec, Set<String> dimensions) {
@@ -394,7 +398,7 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
   @JsonProperty("source")
   public String getSource()
   {
-    return null;
+    return getInputDataSource();
   }
 
   @Override
@@ -490,7 +494,10 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
   public String getPrequeryDatasource(){
     return prequeryDatasource;
   }
-
+  @JsonProperty("inputDataSource")
+  public String getInputDataSource(){
+      return inputDataSourceSpec.getDataSource();
+  }
   @JsonProperty("dimensionsSpec")
   public DimensionsSpec getDimensionsSpec()
   {

@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningScheduledExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
+import org.apache.druid.client.materializedview.IntervalUtils;
 import org.apache.druid.client.materializedview.MaterializedViewUtils;
 import org.apache.druid.client.materializedview.PreQuerryDataSourceMetadata;
 import org.apache.druid.common.guava.SettableSupplier;
@@ -224,8 +225,27 @@ public class PreQuerySupervisor implements Supervisor
           && spec.getInputDataSourceSpec().getDataSource().equals(((PreQuerryDataSourceMetadata) metadata).getInputDataSourceSpec().getDataSource())) {
         deritiveDataSourceMetadatas =
             metadataStorageCoordinator.retrievePreQueryDataSourceMetadata(
-            prequeryDatasource);
-        if(deritiveDataSourceMetadatas!=null){
+                spec.getInputDataSource());
+        if(deritiveDataSourceMetadatas!=null && !deritiveDataSourceMetadatas.isEmpty()){
+          //失效时段更新到数据库
+          for(Pair<String,DerivativeDataSourceMetadata> deritiveDataSourceMetadata:deritiveDataSourceMetadatas){
+            Map<Interval, Integer> intervals = deritiveDataSourceMetadata.rhs.getIntervals();
+            Map<Interval, Integer> validIntervals = IntervalUtils.getValidIntervals(intervals);
+            if(!intervals.equals(validIntervals)){
+              deritiveDataSourceMetadata.rhs.setIntervals(validIntervals);
+              metadataStorageCoordinator.resetDataSourceMetadata(deritiveDataSourceMetadata.lhs,
+                                                                 deritiveDataSourceMetadata.rhs);
+            }
+            //更新模板表中对应状态
+            if(validIntervals.isEmpty()){
+              log.info("deritiveDataSourceMetadata[%s] is empty,update status to COMPLETED_OR_EXPIRED",deritiveDataSourceMetadata.lhs);
+              metadataStorageCoordinator.updateTemplateStatus(deritiveDataSourceMetadata.lhs,
+                                                              DerivativeDataSourceMetadata.Status.COMPLETED_OR_EXPIRED.getCode());
+            }else{
+              metadataStorageCoordinator.updateTemplateStatus(deritiveDataSourceMetadata.lhs, DerivativeDataSourceMetadata.Status.IN_PROGRESS.getCode());
+            }
+          }
+          //动态物化策略
           deritiveDataSourceMetadatas.forEach(deritiveDataSourceMetada -> checkSegmentsAndSubmitTasks(
               deritiveDataSourceMetada.lhs,
               deritiveDataSourceMetada.rhs));
@@ -287,7 +307,7 @@ public class PreQuerySupervisor implements Supervisor
         prequeryDatasource,
         DateTimes.nowUtc(),
         spec.isSuspended(),
-        null,
+        prequeryDatasource,
         spec.getDimensions(),
         spec.getMetrics(),
         JodaUtils.condenseIntervals(missInterval),
@@ -362,13 +382,13 @@ public class PreQuerySupervisor implements Supervisor
    * Choose the latest intervals to create new Task and submit it.
    */
   @VisibleForTesting
-  void checkSegmentsAndSubmitTasks(String deritiveDataSource,DerivativeDataSourceMetadata baseDataSourceMetadata)
+  void checkSegmentsAndSubmitTasks(String deritiveDataSource, DerivativeDataSourceMetadata baseDataSourceMetadata)
   {
     synchronized (taskLock) {
       List<Interval> intervalsToRemove = new ArrayList<>();
       for (Map.Entry<Interval, Task> entry : runningTasks.entrySet()) {
         Optional<TaskStatus> taskStatus = taskStorage.getStatus(entry.getValue().getId());
-        if ((!taskStatus.isPresent() || !taskStatus.get().isRunnable()) && reachCacheTimeout(entry.getKey())) {
+        if ((!taskStatus.isPresent() || !taskStatus.get().isRunnable()) /*&& reachCacheTimeout(entry.getKey())*/) {
           runningTaskSets.remove(entry.getValue());
           intervalsToRemove.add(entry.getKey());
         }
@@ -486,17 +506,22 @@ public class PreQuerySupervisor implements Supervisor
         getMaterializedVersionAndBaseSegments(derivativeSegmentsCollection, toBuildHistoryMvInterval);
 
     // Pair<interval -> version, interval -> list<DataSegment>>
-    Collection<DataSegment> baseSegmentsCollection =
+    Collection<DataSegment> allBaseSegments =
         metadataStorageCoordinator.retrieveAllUsedSegments(baseDataSourceMetadata.getBaseDataSource(),
                                                            Segments.ONLY_VISIBLE);
-    if (baseSegmentsCollection.size() == 0) {
+    if (allBaseSegments.size() == 0) {
       return null;
     }
-
+    //根据intervals获取对应的segments
+    Collection<DataSegment> candidateBaseSegments = filteredBaseSegmentsByIntervals(allBaseSegments,
+                                                                                    baseDataSourceMetadata.getIntervals().keySet());
+    if (candidateBaseSegments.size() == 0) {
+      return null;
+    }
     Map<Interval, Pair<Boolean, String>> toBuildBaseIntervalFromOlderMvInterval = new HashMap<>();
     Pair<Map<Interval, String>, Map<Interval, List<DataSegment>>> baseSegmentsSnapshot =
         getVersionAndBaseSegments(
-            baseSegmentsCollection,
+            candidateBaseSegments,
             toBuildHistoryMvInterval,
             toBuildBaseIntervalFromOlderMvInterval,
             baseDataSourceMetadata.getGranularitySpec().getSegmentGranularity(),
@@ -613,6 +638,20 @@ public class PreQuerySupervisor implements Supervisor
         toBuildBaseIntervalFromOlderMvInterval
     );
     return new Pair<>(sortedToBuildInterval, baseSegments);
+  }
+
+  private Collection<DataSegment> filteredBaseSegmentsByIntervals(Collection<DataSegment> allBaseSegments, Set<Interval> intervals) {
+    List<DataSegment> filteredBaseSegments = new ArrayList<>();
+    for (DataSegment segment : allBaseSegments) {
+      if (isCandidateDataSegments(intervals, segment.getInterval())) {
+        filteredBaseSegments.add(segment);
+      }
+    }
+    return filteredBaseSegments;
+  }
+
+  private boolean isCandidateDataSegments(Set<Interval> intervals, Interval interval) {
+    return intervals.stream().anyMatch(interval::overlaps);
   }
 
   private void appendingCheckNewSegments(

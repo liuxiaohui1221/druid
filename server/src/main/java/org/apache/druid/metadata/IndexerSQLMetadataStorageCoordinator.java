@@ -22,7 +22,6 @@ package org.apache.druid.metadata;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
@@ -38,6 +37,8 @@ import org.apache.druid.client.materializedview.DerivativeDataSourceCreationPara
 import org.apache.druid.client.materializedview.DerivativeDataSourceInitializer;
 import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
 import org.apache.druid.client.materializedview.DruidGranularityUtils;
+import org.apache.druid.client.materializedview.IntervalUtils;
+import org.apache.druid.client.materializedview.PreQueryTemplateMetadata;
 import org.apache.druid.error.InvalidInput;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.IndexerMetadataStorageCoordinator;
@@ -74,7 +75,9 @@ import org.apache.druid.timeline.partition.PartitionChunk;
 import org.apache.druid.timeline.partition.PartitionIds;
 import org.apache.druid.timeline.partition.ShardSpec;
 import org.apache.druid.timeline.partition.SingleDimensionShardSpec;
+import org.eclipse.jetty.util.StringUtil;
 import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.joda.time.Interval;
 import org.joda.time.chrono.ISOChronology;
 import org.skife.jdbi.v2.Handle;
@@ -103,6 +106,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -2495,7 +2499,7 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
 
   @Nullable
   @Override
-  public List<Pair<String, DerivativeDataSourceMetadata>> retrievePreQueryDataSourceMetadata(String prequeryDataSource)
+  public List<Pair<String, DerivativeDataSourceMetadata>> retrievePreQueryDataSourceMetadata(String inputDataSource)
   {
     //select dds.dataSource,dds.commit_metadata_payload ?
     List<Pair<String, DerivativeDataSourceMetadata>> derivativesInDatabase = connector.retryWithHandle(
@@ -2504,11 +2508,11 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
                 .createQuery(
                     StringUtils.format(
                         "SELECT DISTINCT dataSource,commit_metadata_payload from %s dpqt inner "
-                        + "join %s dds on dpqt.template_name = dds.dataSource where dpqt.status=0 and dpqt.table_name "
-                        + "= %s",
-                        dbTables.getPreQueryTemplateTable(),dbTables.getDataSourceTable(),prequeryDataSource
+                        + "join %s dds on dpqt.template_name = dds.dataSource where dpqt.status!=2 and dpqt.table_name "
+                        + " = :inputDataSource",
+                        dbTables.getPreQueryTemplateTable(), dbTables.getDataSourceTable()
                     )
-                )
+                ).bind("inputDataSource", inputDataSource)
                 .map((int index, ResultSet r, StatementContext ctx) -> {
                   String datasourceName = r.getString("dataSource");
                   DataSourceMetadata payload = JacksonUtils.readValue(
@@ -2532,33 +2536,160 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
   public void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params)
       throws JsonProcessingException
   {
+    //参数检查
+    if(params == null){
+      throw new IllegalArgumentException("params is null");
+    }
+    if(StringUtil.isEmpty(params.getDataSource())){
+      throw new IllegalArgumentException("dataSource is null");
+    }
+    if(StringUtil.isEmpty(params.getIntervalStr())){
+      throw new IllegalArgumentException("intervalStr is null");
+    }
+    if(params.getLifeTime() < 0 || params.getLifeTime() > 23){
+      throw new IllegalArgumentException("lifetime value must between 0 and 23");
+    }
+    if(params.getDimensions() == null || params.getDimensions().size() == 0){
+      throw new IllegalArgumentException("dimensions is null");
+    }
+    if(params.getQueryGranularity() == null){
+      throw new IllegalArgumentException("queryGranularity is null");
+    }
+    if(params.getMetrics() == null || params.getMetrics().size() == 0){
+      throw new IllegalArgumentException("metrics is null");
+    }
     //预查询模板中维度字段dims和聚合granularity的组合hash值
     final Hasher hasher = Hashing.murmur3_32_fixed().newHasher();
     List<String> sortDims = new ArrayList<>(params.getDimensions()).stream().sorted().collect(Collectors.toList());
     hasher.putBytes(jsonMapper.writeValueAsBytes(sortDims));
     Granularity queryGranularity = params.getQueryGranularity();
-    String truncGranularity = DruidGranularityUtils.determineTruncGranularity(queryGranularity).toLowerCase();
+    String truncGranularity = DruidGranularityUtils.determineTruncGranularity(queryGranularity).toLowerCase(Locale.ROOT);
     //将粒度取整为分钟，小时，天
     final String templateNameSuffix = hasher.hash().toString();
     final String templateName =
         params.getDataSource() + "_" + truncGranularity + "_" + templateNameSuffix;
     log.info("Creating new template: %s", templateName);
+
     connector.retryTransaction(
         (handle, transactionStatus) -> {
       // 1. 检查模板是否存在
       if (!templateExists(handle, templateName)) {
+        // 2. 插入模板记录
         DerivativeDataSourceInitializer initializer = new DerivativeDataSourceInitializer();
         DerivativeDataSourceMetadata dataSourceMetadata = initializer.apply(params);
-        // 2. 插入模板记录
         insertNewTemplate(handle, templateName, tableName, params);
 
         // 3. 创建初始数据源记录
         this.insertDataSourceMetadata(templateName, dataSourceMetadata);
+      }else{
+        //已存在，尝试更新interval
+        // 1. 查询当前状态
+        PreQueryTemplateMetadata existing = getTemplateInfo(handle, templateName);
+
+        // 2. 计算新状态和Interval，删除已经失效的interval，更新最新的interval
+        PreQueryTemplateMetadata newTemplate = calculateUpdateParams(existing, params.getIntervalStr(), params.getLifeTime());
+
+        // 3. 执行模板更新
+        updateTemplate(handle, templateName, newTemplate.getInterval(), newTemplate.getStatus(),
+                       newTemplate.getLifetime(),newTemplate.getInsertTime());
+
+        Map<Interval,Integer> intervals = IntervalUtils.parseAndMerge(newTemplate.getInterval(),
+                                                              newTemplate.getMergedLifetime());
+        // 4. 同步到数据源表
+        syncDataSource(templateName, intervals);
       }
       return null;
     },3,getSqlMetadataMaxRetry());
   }
+  // 同步到数据源表
+  private void syncDataSource(String templateName, Map<Interval,Integer> newIntervals) throws IOException {
+    // 1. 查询当前数据源信息
+    DerivativeDataSourceMetadata oldDerivative = (DerivativeDataSourceMetadata) retrieveDataSourceMetadata(templateName);
+    Map<Interval,Integer> updatedIntervals = oldDerivative.getIntervals();
+    updatedIntervals.putAll(newIntervals);
 
+    DerivativeDataSourceMetadata newDerivative = new DerivativeDataSourceMetadata(oldDerivative.getBaseDataSource(),
+                                                                                  oldDerivative.getGranularitySpec(),
+                                                                                  oldDerivative.getDimensions(),
+                                                                                  oldDerivative.getMetrics(),
+                                                                                  updatedIntervals);
+    //更新
+    resetDataSourceMetadata(templateName, newDerivative);
+  }
+  @Override
+  public void updateTemplateStatus(String templateName,int status
+  ) {
+    log.info("update template status templateName[%s] status[%s]",templateName,status);
+    connector.retryWithHandle(handle -> {
+      handle.createStatement(
+                                                                 StringUtils.format(
+                                                                     "UPDATE %s SET status = :status WHERE (status = "
+                                                                     + ":oldstatus or updatetime < CURDATE()) and "
+                                                                     + "template_name = :name",
+                                                                     dbTables.getPreQueryTemplateTable()
+                                                                 ))
+                                                             .bind("status", status)
+                                                             .bind("oldstatus", status - 1)
+                                                             .bind("name", templateName)
+                                                             .execute();
+      return null;
+    });
+
+  }
+  // 执行模板更新
+  private void updateTemplate(Handle handle, String templateName, String newInterval, Integer status, int lifeTime,
+                              String createTime
+  ) {
+    handle.createStatement(
+              StringUtils.format("UPDATE %s SET interval = :interval, status = :status, lifetime = :lifetime, "
+                                 + "updatetime = :updatetime " +
+                                 "WHERE template_name = :name", dbTables.getPreQueryTemplateTable()))
+        .bind("interval", newInterval)
+        .bind("status", status)
+        .bind("lifetime", lifeTime)
+        .bind("updatetime", createTime)
+        .bind("name", templateName)
+        .execute();
+  }
+  // 状态机逻辑
+  private PreQueryTemplateMetadata calculateUpdateParams(PreQueryTemplateMetadata existing, String newInterval,
+                                                         int lifeTime
+  ) {
+    String mergedInterval;
+    String mergedLifetime;
+    int newStatus;
+    int status;
+    if(existing.isValidLifeTime()){
+      status = existing.getStatus(); // 保持状态不变
+    }else{
+      status = 2;
+    }
+
+    switch (status) {
+      case 0: // 未完成状态，合并区间
+        mergedInterval = String.join(",", existing.getInterval(), newInterval);
+        mergedLifetime = String.join(",", String.valueOf(existing.getLifetime()), String.valueOf(lifeTime));
+        newStatus = 0; // 保持状态不变
+        break;
+      case 1: // 进行中状态，替换区间并重置状态
+      case 2: // 已完成或已失效状态，覆盖区间并重置
+        mergedInterval = newInterval;
+        mergedLifetime = String.valueOf(lifeTime);
+        newStatus = 0;
+        break;
+      default:
+        throw new ISE("未知状态: %d", existing.getStatus());
+    }
+
+    PreQueryTemplateMetadata preQueryTemplateMetadata = new PreQueryTemplateMetadata(
+        newStatus,
+        mergedInterval,
+        lifeTime,
+        DateTimes.nowUtc().toString()
+    );
+    preQueryTemplateMetadata.setMergedLifetime(mergedLifetime);
+    return preQueryTemplateMetadata;
+  }
   // 检查模板是否存在
   private boolean templateExists(Handle handle, String templateName) {
     return handle.createQuery(
@@ -2568,30 +2699,45 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
                  .mapTo(Integer.class)
                  .first() > 0;
   }
-
+  // 查询模板当前状态
+  private PreQueryTemplateMetadata getTemplateInfo(Handle handle, String templateName) {
+    return handle.createQuery(
+                       "SELECT status, `interval`, lifetime, inserttime FROM " + dbTables.getPreQueryTemplateTable() +
+                      " WHERE template_name = :name")
+                 .bind("name", templateName)
+                 .map((int index, ResultSet r, StatementContext ctx) -> new PreQueryTemplateMetadata(
+                     r.getInt("status"),
+                     r.getString("interval"),
+                     r.getInt("lifetime"),
+                     r.getString("inserttime")
+                 )).first();
+  }
   // 插入新模板记录
   private void insertNewTemplate(
       Handle handle,
       String templateName,
       String tableName,
-      DerivativeDataSourceCreationParams param
+      DerivativeDataSourceCreationParams payload
   ) throws JsonProcessingException
   {
     handle.createStatement(
-              StringUtils.format(
-                  "INSERT INTO %s (template_name, table_name, `interval`, status, granularity, dims, state_id, payload) " +
-                  "VALUES (:name, :table, :interval, 0, :granularity, :dims, 0, :payload)",
-                  dbTables.getPreQueryTemplateTable()
-              )
-          )
-          .bind("name", templateName)
-          .bind("table", tableName)
-          .bind("interval", param.getIntervalStr())
-          .bind("granularity", jsonMapper.writeValueAsBytes(param.getQueryGranularity()))
-          .bind("dims", jsonMapper.writeValueAsBytes(param.getDimensions()))
-          //.bind("state_id", param.getStateId())
-          .bind("payload", jsonMapper.writeValueAsBytes(param))
-          .execute();
+          StringUtils.format(
+              "INSERT INTO %s (template_name, table_name, `interval`, status, granularity, dims, state_id, "
+              + "payload, lifetime, inserttime, updatetime) " +
+              "VALUES (:name, :table, :interval, 0, :granularity, :dims, 0, :payload, :lifetime, :inserttime, "
+              + ":updatetime)",
+              dbTables.getPreQueryTemplateTable()
+          ))
+        .bind("name", templateName)
+        .bind("table", tableName)
+        .bind("interval", payload.getIntervalStr())
+        .bind("granularity",jsonMapper.writeValueAsBytes(payload.getQueryGranularity()))
+        .bind("dims", payload.getDimensions())
+        .bind("payload", jsonMapper.writeValueAsBytes(payload))
+        .bind("lifetime", payload.getLifeTime())
+        .bind("inserttime", DateTimes.nowUtc().toString())
+        .bind("updatetime", DateTimes.nowUtc().toString())
+        .execute();
   }
 
   /**

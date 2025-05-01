@@ -24,7 +24,10 @@ import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.Binder;
+import org.apache.druid.client.materializedview.DerivativeDataSourceCreationParams;
 import org.apache.druid.client.materializedview.DerivativeDataSourceMetadata;
+import org.apache.druid.client.materializedview.PreQuerryDataSourceMetadata;
+import org.apache.druid.client.materializedview.PreQueryTemplateMetadata;
 import org.apache.druid.discovery.NodeRole;
 import org.apache.druid.guice.JsonConfigProvider;
 import org.apache.druid.guice.annotations.LoadScope;
@@ -42,10 +45,13 @@ public class PreQueryDruidModule implements DruidModule
     return ImmutableList.of(
         new SimpleModule(getClass().getSimpleName())
             .registerSubtypes(
-                new NamedType(PreQuerySupervisorSpec.class, "materialized_view"),
+                new NamedType(PreQuerySupervisorSpec.class, "PreQuery"),
                 // new NamedType(HadoopMaterializedViewSupervisorSpec.class, "derivativeDataSource"),
                 new NamedType(MaterializedViewTask.class, "index_materialized_view"),
-                new NamedType(DerivativeDataSourceMetadata.class, "materialized_view")
+                new NamedType(DerivativeDataSourceMetadata.class, "materialized_view"),
+                new NamedType(PreQueryTemplateMetadata.class, "PreQueryTemplate"),
+                new NamedType(PreQuerryDataSourceMetadata.class, "PreQuery"),
+                new NamedType(DerivativeDataSourceCreationParams.class, "PreQuery_template")
             )
     );
   }

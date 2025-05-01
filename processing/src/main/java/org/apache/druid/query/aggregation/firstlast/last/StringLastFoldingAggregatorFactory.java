@@ -38,4 +38,10 @@ public class StringLastFoldingAggregatorFactory extends StringLastAggregatorFact
   {
     return new StringLastFoldingAggregatorFactory(newName, getFieldName(), getMaxStringBytes());
   }
+
+  @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new StringLastFoldingAggregatorFactory(newName, getName(), getMaxStringBytes());
+  }
 }

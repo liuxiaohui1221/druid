@@ -84,6 +84,12 @@ public class TestIndexerMetadataStorageCoordinator implements IndexerMetadataSto
   }
 
   @Override
+  public void updateTemplateStatus(String templateName, int status)
+  {
+
+  }
+
+  @Override
   public boolean deleteDataSourceMetadata(String dataSource)
   {
     throw new UnsupportedOperationException();

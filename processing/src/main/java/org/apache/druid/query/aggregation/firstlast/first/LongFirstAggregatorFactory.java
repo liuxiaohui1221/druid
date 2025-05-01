@@ -277,6 +277,12 @@ public class LongFirstAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new LongFirstAggregatorFactory(newName, getName(), getTimeColumn());
+  }
+
+  @Override
   public boolean equals(Object o)
   {
     if (this == o) {

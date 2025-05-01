@@ -262,6 +262,12 @@ public class DDSketchAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new DDSketchAggregatorFactory(newName, getName(), getRelativeError(), getNumBins(), cacheTypeId);
+  }
+
+  @Override
   public AggregateCombiner<DDSketch> makeAggregateCombiner()
   {
     return new ObjectAggregateCombiner<DDSketch>()

@@ -116,6 +116,12 @@ public class DoubleMinAggregatorFactory extends SimpleDoubleAggregatorFactory
   }
 
   @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new DoubleMinAggregatorFactory(newName, getName(), getExpression(), macroTable);
+  }
+
+  @Override
   public byte[] getCacheKey()
   {
     return cacheKey.get();

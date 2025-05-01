@@ -1,38 +1,86 @@
 package org.apache.druid.client.materializedview;
 
-import org.joda.time.Interval;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.joda.time.DateTime;
 
-import java.util.Set;
+import java.sql.Timestamp;
+import java.util.Objects;
 
 public class PreQueryTemplateMetadata
 {
-  private final String templateName;
-  private final String tableName;
-  private final Interval ingestInterval;
-  private final ClientTaskGranularitySpec granularitySpec;
-  private final Set<String> dimensions;
-  private final Set<String> metrics;
-  private final Integer qlStateId;
-  private final String prequery;//payload
+  private final String interval;
+  private final Integer status;
+  private final int lifetime;
+  private final String insertTime;
+  private String mergedLifetime;
 
-  public PreQueryTemplateMetadata(
-      String templateName,
-      String tableName,
-      Interval ingestInterval,
-      ClientTaskGranularitySpec granularitySpec,
-      Set<String> dimensions,
-      Set<String> metrics,
-      Integer qlStateId,
-      String prequery
-  )
+  @JsonCreator
+  public PreQueryTemplateMetadata(@JsonProperty("status") Integer status,
+                                  @JsonProperty("interval") String interval,
+                                  @JsonProperty("lifetime") int lifetime,
+                                  @JsonProperty("inserttime") String insertTime)
   {
-    this.templateName = templateName;
-    this.tableName = tableName;
-    this.ingestInterval = ingestInterval;
-    this.granularitySpec = granularitySpec;
-    this.dimensions = dimensions;
-    this.metrics = metrics;
-    this.qlStateId = qlStateId;
-    this.prequery = prequery;
+    this.interval = interval;
+    this.status = status;
+    this.lifetime = lifetime;
+    this.insertTime = insertTime;
+  }
+
+  public boolean isValidLifeTime(){
+    //获取当前小时，如果大于lifetime则已失效
+    return IntervalUtils.isValidLifeTime(insertTime,lifetime);
+  }
+
+  public String getMergedLifetime()
+  {
+    return mergedLifetime;
+  }
+
+  public void setMergedLifetime(String mergedLifetime)
+  {
+    this.mergedLifetime = mergedLifetime;
+  }
+
+  public String getInterval()
+  {
+    return interval;
+  }
+
+  public Integer getStatus()
+  {
+    return status;
+  }
+
+  public int getLifetime()
+  {
+    return lifetime;
+  }
+
+  public String getInsertTime()
+  {
+    return insertTime;
+  }
+
+  @Override
+  public boolean equals(Object o)
+  {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    PreQueryTemplateMetadata that = (PreQueryTemplateMetadata) o;
+    return lifetime == that.lifetime && Objects.equals(interval, that.interval) && Objects.equals(
+        status,
+        that.status
+    );
+  }
+
+  @Override
+  public int hashCode()
+  {
+    return Objects.hash(interval, status, lifetime);
   }
 }

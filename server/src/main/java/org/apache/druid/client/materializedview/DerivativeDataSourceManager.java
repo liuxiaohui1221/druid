@@ -214,10 +214,10 @@ public class DerivativeDataSourceManager
   {
     final String sql;
     if(config.isEnablePreQuery()){
-      sql = "SELECT DISTINCT dataSource,commit_metadata_payload from %s dpqt inner "
+      sql = "SELECT DISTINCT dataSource,commit_metadata_payload from "+dbTables.get().getPreQueryTemplateTable()+" dpqt inner "
             + "join %s dds on dpqt.template_name = dds.dataSource";
     }else{
-      sql = "SELECT DISTINCT dataSource,commit_metadata_payload FROM %1$s";
+      sql = "SELECT DISTINCT dataSource,commit_metadata_payload FROM %s";
     }
     List<Pair<String, DerivativeDataSourceMetadata>> derivativesInDatabase = connector.retryWithHandle(
         handle ->
@@ -263,7 +263,7 @@ public class DerivativeDataSourceManager
                                    metadata.getGranularitySpec(),
                                    columns,
                                    metadata.getDimensions(),
-                                   metadata.getIntervals()
+                                   metadata.getIntervals()==null?null:metadata.getIntervals().keySet()
                                );
                              })
                              .collect(Collectors.toList());

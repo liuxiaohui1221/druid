@@ -280,6 +280,12 @@ public class DoubleLastAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new DoubleLastAggregatorFactory(newName, getName(), getTimeColumn());
+  }
+
+  @Override
   public boolean equals(Object o)
   {
     if (this == o) {

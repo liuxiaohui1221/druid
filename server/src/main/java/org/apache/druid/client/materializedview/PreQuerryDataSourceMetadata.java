@@ -46,6 +46,7 @@ public class PreQuerryDataSourceMetadata implements DataSourceMetadata
     this.inputDataSourceSpec=inputDataSourceSpec;
   }
 
+  @JsonProperty("inputSpec")
   public InputDataSourceSpec getInputDataSourceSpec()
   {
     return inputDataSourceSpec;

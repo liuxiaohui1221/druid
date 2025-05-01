@@ -51,6 +51,7 @@ import org.apache.druid.query.QueryInterruptedException;
 import org.apache.druid.query.QueryToolChest;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.context.ResponseContext.Keys;
+import org.apache.druid.query.groupby.GroupByQuery;
 import org.apache.druid.query.groupby.GroupingEngine;
 import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
 import org.apache.druid.query.materializedview.MaterializedViewQuery;
@@ -151,7 +152,7 @@ public class QueryResource implements QueryCountStatsProvider
 
   public static Query getMaterializedViewQueryIfNecessary(Query<?>  baseQuery, MaterializedViewOptimizer mvOptimizer)
   {
-    if (!(baseQuery instanceof BaseQuery)) {
+    if (!(baseQuery instanceof BaseQuery) || !(baseQuery instanceof GroupByQuery)) {
       return baseQuery;
     }
     boolean enableMv=baseQuery.context().getBoolean(QueryContexts.CTX_KEY_ENABLE_MATERIALIZED_VIEW,

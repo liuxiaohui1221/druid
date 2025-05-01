@@ -430,4 +430,14 @@ public abstract class AggregatorFactory implements Cacheable
 
     return mergedAggregators == null ? null : mergedAggregators.values().toArray(new AggregatorFactory[0]);
   }
+
+  /**
+   * Returns a new AggregatorFactory with the same configuration as this one, except with the given newName and use
+   * old name as fieldName.
+   * @param newName new name for the output of the aggregator.
+   * @return
+   */
+  public AggregatorFactory withNameAsFieldName(String newName) {
+    throw new UOE("Cannot change input name and output name for AggregatorFactory[%s].", this.getClass().getName());
+  }
 }

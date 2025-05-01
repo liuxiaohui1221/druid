@@ -26,6 +26,8 @@ import com.google.common.base.Strings;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.joda.time.Interval;
 
+import java.util.Collections;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -36,14 +38,14 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
   private final ClientTaskGranularitySpec granularitySpec;
   private final Set<String> dimensions;
   private final Set<String> metrics;
-  private final Set<Interval> intervals;
+  private Map<Interval,Integer> intervals;//value存放intervals的存活时间，hour=[0-23]
   @JsonCreator
   public DerivativeDataSourceMetadata(
       @JsonProperty("baseDataSource") String baseDataSource,
       @JsonProperty("granularitySpec") ClientTaskGranularitySpec granularitySpec,
       @JsonProperty("dimensions") Set<String> dimensions,
       @JsonProperty("metrics") Set<String> metrics,
-      @JsonProperty("intervals") Set<Interval> intervals
+      @JsonProperty("intervals") Map<Interval,Integer> intervals
   )
   {
     Preconditions.checkArgument(
@@ -84,8 +86,13 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
   }
 
   @JsonProperty("intervals")
-  public Set<Interval> getIntervals(){
-    return intervals;
+  public Map<Interval,Integer> getIntervals(){
+    return intervals==null ? Collections.emptyMap() : intervals;
+  }
+
+  public void setIntervals(Map<Interval, Integer> intervals)
+  {
+    this.intervals = intervals;
   }
 
   @Override
@@ -154,5 +161,23 @@ public class DerivativeDataSourceMetadata implements DataSourceMetadata
            ", metrics=" + metrics +
            ", intervals=" + intervals +
            '}';
+  }
+
+  public enum Status {
+    INACTIVE(0),
+    IN_PROGRESS(1),
+    COMPLETED_OR_EXPIRED(2);
+
+    private final int code;
+
+    // 构造函数
+    Status(int code) {
+      this.code = code;
+    }
+
+    // 获取code的方法
+    public int getCode() {
+      return code;
+    }
   }
 }

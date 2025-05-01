@@ -38,4 +38,10 @@ public class StringFirstFoldingAggregatorFactory extends StringFirstAggregatorFa
   {
     return new StringFirstFoldingAggregatorFactory(newName, getFieldName(), getMaxStringBytes());
   }
+
+  @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new StringFirstFoldingAggregatorFactory(newName, getName(), getMaxStringBytes());
+  }
 }

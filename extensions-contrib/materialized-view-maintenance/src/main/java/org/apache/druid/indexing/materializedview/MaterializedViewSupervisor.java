@@ -191,7 +191,8 @@ public class MaterializedViewSupervisor implements Supervisor
                 spec.getBaseDataSource(),
                 spec.getGranularitySpec(),
                 spec.getDimensions(),
-                spec.getMetrics()
+                spec.getMetrics(),
+                null
             )
         );
       }
@@ -321,7 +322,8 @@ public class MaterializedViewSupervisor implements Supervisor
               spec.getBaseDataSource(),
               spec.getGranularitySpec(),
               spec.getDimensions(),
-              spec.getMetrics()
+              spec.getMetrics(),
+              null
           )
       );
     } else {

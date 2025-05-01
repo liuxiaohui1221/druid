@@ -31,6 +31,7 @@ import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.timeline.partition.PartialShardSpec;
 import org.joda.time.DateTime;
 import org.joda.time.Interval;
+import org.skife.jdbi.v2.Handle;
 
 import javax.annotation.Nullable;
 import javax.validation.constraints.NotNull;
@@ -402,7 +403,7 @@ public interface IndexerMetadataStorageCoordinator
    * Retrieves data source's metadata from the metadata store. Returns null if there is no metadata.
    */
   @Nullable DataSourceMetadata retrieveDataSourceMetadata(String dataSource);
-  @Nullable List<Pair<String, DerivativeDataSourceMetadata>> retrievePreQueryDataSourceMetadata(String prequeryDataSource);
+  @Nullable List<Pair<String, DerivativeDataSourceMetadata>> retrievePreQueryDataSourceMetadata(String inputDataSource);
 
   /**
    * Inserts a new entry for 'dataSource' in the dataSource metadata table.
@@ -410,6 +411,13 @@ public interface IndexerMetadataStorageCoordinator
    * @param params 预查询模板信息
    */
   void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params) throws JsonProcessingException;
+
+  /**
+   * 状态机方式更新模板状态
+   * @param templateName
+   * @param status
+   */
+  void updateTemplateStatus(String templateName, int status);
   /**
    * Removes entry for 'dataSource' from the dataSource metadata table.
    *

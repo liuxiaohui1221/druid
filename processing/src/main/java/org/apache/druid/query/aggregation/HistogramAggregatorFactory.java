@@ -229,6 +229,12 @@ public class HistogramAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new HistogramAggregatorFactory(newName, getName(), breaksList);
+  }
+
+  @Override
   public String toString()
   {
     return "HistogramAggregatorFactory{" +

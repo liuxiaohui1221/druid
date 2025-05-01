@@ -339,6 +339,12 @@ public class StringFirstAggregatorFactory extends AggregatorFactory
   }
 
   @Override
+  public AggregatorFactory withNameAsFieldName(String newName)
+  {
+    return new StringFirstAggregatorFactory(newName, getName(), getTimeColumn(), getMaxStringBytes());
+  }
+
+  @Override
   public boolean equals(Object o)
   {
     if (this == o) {
