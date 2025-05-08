@@ -27,9 +27,9 @@ public class PreQueryTemplateMetadata
     this.insertTime = insertTime;
   }
 
-  public boolean isValidLifeTime(){
+  public boolean isValidLifeTime(boolean skipCheck){
     //获取当前小时，如果大于lifetime则已失效
-    return IntervalUtils.isValidLifeTime(insertTime,lifetime);
+    return IntervalUtils.isValidLifeTime(skipCheck,insertTime,lifetime);
   }
 
   public String getMergedLifetime()

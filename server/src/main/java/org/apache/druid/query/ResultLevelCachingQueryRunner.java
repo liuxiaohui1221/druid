@@ -206,6 +206,7 @@ public class ResultLevelCachingQueryRunner<T> implements QueryRunner<T>
           skip=defaultLimitSpec.getOffset();
           limit=defaultLimitSpec.getLimit();
         }
+        log.info("Hit SubQuer cachey for query %s, return merged result set",query.getId());
         return new MergeSequence<>(query.getResultOrdering(),Sequences.simple(optimizedQueries)).skip(skip).limit(limit);
       }else {
         @Nullable

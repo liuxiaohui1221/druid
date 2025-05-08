@@ -79,6 +79,7 @@ import org.eclipse.jetty.util.StringUtil;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.Interval;
+import org.joda.time.base.BaseInterval;
 import org.joda.time.chrono.ISOChronology;
 import org.skife.jdbi.v2.Handle;
 import org.skife.jdbi.v2.PreparedBatch;
@@ -2533,7 +2534,7 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
 
   /* 新增方法：处理模板创建 */
   @Override
-  public void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params)
+  public void createNewTemplate(boolean skipCheck,String tableName, DerivativeDataSourceCreationParams params)
       throws JsonProcessingException
   {
     //参数检查
@@ -2549,14 +2550,14 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
     if(params.getLifeTime() < 0 || params.getLifeTime() > 23){
       throw new IllegalArgumentException("lifetime value must between 0 and 23");
     }
-    if(params.getDimensions() == null || params.getDimensions().size() == 0){
-      throw new IllegalArgumentException("dimensions is null");
-    }
     if(params.getQueryGranularity() == null){
       throw new IllegalArgumentException("queryGranularity is null");
     }
-    if(params.getMetrics() == null || params.getMetrics().size() == 0){
+    if(params.getMetrics() == null || params.getMetrics().isEmpty()){
       throw new IllegalArgumentException("metrics is null");
+    }
+    if(params.getDimensions() == null || params.getDimensions().isEmpty()){
+      throw new IllegalArgumentException("dimensions is null");
     }
     //预查询模板中维度字段dims和聚合granularity的组合hash值
     final Hasher hasher = Hashing.murmur3_32_fixed().newHasher();
@@ -2587,7 +2588,8 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
         PreQueryTemplateMetadata existing = getTemplateInfo(handle, templateName);
 
         // 2. 计算新状态和Interval，删除已经失效的interval，更新最新的interval
-        PreQueryTemplateMetadata newTemplate = calculateUpdateParams(existing, params.getIntervalStr(), params.getLifeTime());
+        PreQueryTemplateMetadata newTemplate = calculateUpdateParams(skipCheck,existing, params.getIntervalStr(),
+                                                                     params.getLifeTime());
 
         // 3. 执行模板更新
         updateTemplate(handle, templateName, newTemplate.getInterval(), newTemplate.getStatus(),
@@ -2641,7 +2643,7 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
                               String createTime
   ) {
     handle.createStatement(
-              StringUtils.format("UPDATE %s SET interval = :interval, status = :status, lifetime = :lifetime, "
+              StringUtils.format("UPDATE %s SET `interval` = :interval, status = :status, lifetime = :lifetime, "
                                  + "updatetime = :updatetime " +
                                  "WHERE template_name = :name", dbTables.getPreQueryTemplateTable()))
         .bind("interval", newInterval)
@@ -2652,14 +2654,15 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
         .execute();
   }
   // 状态机逻辑
-  private PreQueryTemplateMetadata calculateUpdateParams(PreQueryTemplateMetadata existing, String newInterval,
+  private PreQueryTemplateMetadata calculateUpdateParams(boolean skipCheck,PreQueryTemplateMetadata existing,
+                                                         String newInterval,
                                                          int lifeTime
   ) {
     String mergedInterval;
     String mergedLifetime;
     int newStatus;
     int status;
-    if(existing.isValidLifeTime()){
+    if(existing.isValidLifeTime(skipCheck)){
       status = existing.getStatus(); // 保持状态不变
     }else{
       status = 2;
@@ -2667,8 +2670,10 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
 
     switch (status) {
       case 0: // 未完成状态，合并区间
-        mergedInterval = String.join(",", existing.getInterval(), newInterval);
-        mergedLifetime = String.join(",", String.valueOf(existing.getLifetime()), String.valueOf(lifeTime));
+        String[] existedIntevals = existing.getInterval().split(",");
+        // 合并区间
+        mergedInterval = mergeInterval(existedIntevals, newInterval);
+        mergedLifetime = String.valueOf(Math.max(existing.getLifetime(), lifeTime));
         newStatus = 0; // 保持状态不变
         break;
       case 1: // 进行中状态，替换区间并重置状态
@@ -2690,6 +2695,44 @@ public class IndexerSQLMetadataStorageCoordinator implements IndexerMetadataStor
     preQueryTemplateMetadata.setMergedLifetime(mergedLifetime);
     return preQueryTemplateMetadata;
   }
+  private static String mergeInterval(String[] intervalStrs, String intervalStr2) {
+    List<Interval> intervals = new ArrayList<>();
+    // 解析原有区间
+    for (String str : intervalStrs) {
+      intervals.add(Intervals.of(str));
+    }
+    // 添加新区间
+    intervals.add(Intervals.of(intervalStr2));
+
+    // 按开始时间排序
+    intervals.sort(Comparator.comparingLong(BaseInterval::getStartMillis));
+
+    List<Interval> merged = new ArrayList<>();
+    for (Interval interval : intervals) {
+      if (merged.isEmpty()) {
+        merged.add(interval);
+      } else {
+        Interval last = merged.get(merged.size() - 1);
+        // 检查是否重叠或相邻
+        if (interval.getStartMillis() <= last.getEndMillis()) {
+          // 合并区间
+          long newStart = Math.min(last.getStartMillis(), interval.getStartMillis());
+          long newEnd = Math.max(last.getEndMillis(), interval.getEndMillis());
+          merged.set(merged.size() - 1, new Interval(newStart, newEnd, DateTimeZone.UTC));
+        } else {
+          merged.add(interval);
+        }
+      }
+    }
+
+    // 转换为字符串列表
+    List<String> result = new ArrayList<>();
+    for (Interval interval : merged) {
+      result.add(interval.toString());
+    }
+    return String.join(",", result);
+  }
+
   // 检查模板是否存在
   private boolean templateExists(Handle handle, String templateName) {
     return handle.createQuery(

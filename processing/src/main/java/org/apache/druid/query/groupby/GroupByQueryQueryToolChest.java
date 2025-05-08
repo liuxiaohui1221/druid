@@ -98,7 +98,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -114,6 +116,7 @@ import java.util.stream.Collectors;
 public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupByQuery>
 {
   public static final byte GROUPBY_QUERY = 0x14;
+  public static final String HEADER_SPLIT = "@";
   public static final TypeReference<Object> OBJECT_TYPE_REFERENCE =
       new TypeReference<Object>()
       {
@@ -575,6 +578,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
       private static final byte CACHE_STRATEGY_VERSION = 0x1;
       private final List<AggregatorFactory> aggs = query.getAggregatorSpecs();
       private final List<DimensionSpec> dims = query.getDimensions();
+      private final List<PostAggregator> postAggs = query.getPostAggregatorSpecs();
 
       @Override
       public boolean isCacheable(GroupByQuery query, boolean willMergeRunners, boolean bySegment, boolean enableSubQueryReuse)
@@ -693,36 +697,73 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
           boolean isResultLevelCache, GroupByQuery query) {
         return new Function<ResultRow, Object>()
         {
+          //获取所有全局索引位置，并从小到大排序，新排序位置作为字段缓存索引
+          List<Integer> colGlobalIndex = null;
           @Override
           public Object apply(ResultRow resultRow)
           {
-            int size = Math.max(colDictionary.size(),1 + dims.size() + aggs.size());
-            final Object[] retVal = new Object[size];
-            int inPos = 0;
-            if (resultRowHasTimestamp) {
+            if(colGlobalIndex == null){
+              colGlobalIndex = new ArrayList<>();
               int newPos=colDictionary.add("__time");
-              retVal[newPos]=resultRow.getLong(inPos++);
-            } else {
-              retVal[0]=query.getUniversalTimestamp().getMillis();
+              colGlobalIndex.add(newPos);
+              for (DimensionSpec dim : dims) {
+                newPos=colDictionary.add(Arrays.toString(dim.getCacheKey()));
+                colGlobalIndex.add(newPos);
+              }
+              for (AggregatorFactory agg : aggs) {
+                newPos = colDictionary.add(Arrays.toString(agg.getCacheKey()));
+                colGlobalIndex.add(newPos);
+              }
+              if (isResultLevelCache) {
+                for (int i = 0; i < query.getPostAggregatorSpecs().size(); i++) {
+                  newPos = colDictionary.add(Arrays.toString(query.getPostAggregatorSpecs()
+                                                                    .get(i)
+                                                                    .getCacheKey()));
+                  colGlobalIndex.add(newPos);
+                }
+              }
+              //排序
+              Collections.sort(colGlobalIndex);
             }
 
-            for (DimensionSpec dim : dims) {
-              int newPos=colDictionary.add(Arrays.toString(dim.getCacheKey()));
-              retVal[newPos]=resultRow.get(inPos++);
-            }
-            for (AggregatorFactory agg : aggs) {
-              int newPos=colDictionary.add(Arrays.toString(agg.getCacheKey()));
-              retVal[newPos]=resultRow.get(inPos++);
-            }
-            if (isResultLevelCache) {
-              for (int i = 0; i < query.getPostAggregatorSpecs().size(); i++) {
-                int newPos=colDictionary.add(Arrays.toString(query.getPostAggregatorSpecs()
-                                                                               .get(i)
-                                                                               .getCacheKey()));
-                retVal[newPos]=resultRow.get(inPos++);
-              }
+            int size = 1 + dims.size() + aggs.size() + postAggs.size();
+            final Object[] retVal = new Object[size];
+            int inPos = 0;
+            try {
+                if(!colGlobalIndex.isEmpty()){
+                  //全局索引作为header信息存储在第一行的第一个位置值的前面
+                  String header=getCacheHeader(colGlobalIndex);
+                  if (resultRowHasTimestamp) {
+                    retVal[0]=header+resultRow.getLong(inPos++);
+                  } else {
+                    retVal[0]=header+query.getUniversalTimestamp().getMillis();
+                  }
+                  colGlobalIndex.clear();
+                }
+                int newPos = 1;
+                for (DimensionSpec dim : dims) {
+                  retVal[newPos++]=resultRow.get(inPos++);
+                }
+                for (AggregatorFactory agg : aggs) {
+                  retVal[newPos++]=resultRow.get(inPos++);
+                }
+                if (isResultLevelCache) {
+                  for (int i = 0; i < query.getPostAggregatorSpecs().size(); i++) {
+                    retVal[newPos++]=resultRow.get(inPos++);
+                  }
+                }
+            } catch(Exception e) {
+              log.error("prepareForCacheReuseFunction error", e);
             }
             return retVal;
+          }
+
+          private String getCacheHeader(List<Integer> colGlobalIndex) {
+            StringBuilder sb=new StringBuilder();
+            for (Integer index : colGlobalIndex) {
+              sb.append(index).append(",");
+            }
+            return sb.toString().substring(0, sb.length()-1)+HEADER_SPLIT;
           }
         };
       }
@@ -733,74 +774,7 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
       )
       {
         final boolean resultRowHasTimestamp = query.getResultRowHasTimestamp();
-        final int dimensionStart = query.getResultRowDimensionStart();
-        final int aggregatorStart = query.getResultRowAggregatorStart();
-        final int postAggregatorStart = query.getResultRowPostAggregatorStart();
-//        if(enableSubDimensionFilterReuse){
-//        }
         return pullFromCacheReuseFunction(resultRowHasTimestamp,isResultLevelCache,query);
-        /*return new Function<Object, ResultRow>()
-        {
-          private final Granularity granularity = query.getGranularity();
-
-          @Override
-          public ResultRow apply(Object input)
-          {
-            Iterator<Object> results = ((List<Object>) input).iterator();
-
-            DateTime timestamp = granularity.toDateTime(((Number) results.next()).longValue());
-
-            final int size = isResultLevelCache
-                             ? query.getResultRowSizeWithPostAggregators()
-                             : query.getResultRowSizeWithoutPostAggregators();
-
-            final ResultRow resultRow = ResultRow.create(size);
-
-            if (resultRowHasTimestamp) {
-              resultRow.set(0, timestamp.getMillis());
-            }
-
-            final Iterator<DimensionSpec> dimsIter = dims.iterator();
-            int dimPos = 0;
-            while (dimsIter.hasNext() && results.hasNext()) {
-              final DimensionSpec dimensionSpec = dimsIter.next();
-
-              // Must convert generic Jackson-deserialized type into the proper type.
-              resultRow.set(
-                  dimensionStart + dimPos,
-                  DimensionHandlerUtils.convertObjectToType(results.next(), dimensionSpec.getOutputType())
-              );
-
-              dimPos++;
-            }
-
-            CacheStrategy.fetchAggregatorsFromCache(
-                aggs,
-                results,
-                isResultLevelCache,
-                (aggName, aggPosition, aggValueObject) -> {
-                  resultRow.set(aggregatorStart + aggPosition, aggValueObject);
-                }
-            );
-
-            if (isResultLevelCache) {
-              for (int postPos = 0; postPos < query.getPostAggregatorSpecs().size(); postPos++) {
-                if (!results.hasNext()) {
-                  throw DruidException.defensive("Ran out of objects while reading postaggs from cache!");
-                }
-                resultRow.set(postAggregatorStart + postPos, results.next());
-              }
-            }
-            if (dimsIter.hasNext() || results.hasNext()) {
-              throw new ISE(
-                  "Found left over objects while reading from cache!! dimsIter[%s] results[%s]",
-                  dimsIter.hasNext(),
-                  results.hasNext()
-              );
-            }
-            return resultRow;
-          }
-        };*/
       }
 
       private Function<Object, ResultRow> pullFromCacheReuseFunction(boolean resultRowHasTimestamp, boolean isResultLevelCache, GroupByQuery query) {
@@ -811,27 +785,44 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
           final int aggregatorStart = query.getResultRowAggregatorStart();
           final int postAggregatorStart = query.getResultRowPostAggregatorStart();
           final List<Interval> intervals = query.getIntervals();
+          Map<Integer,Integer> globalIndexToCacheColPosMap = null;
           @Override
           public ResultRow apply(Object input)
           {
-            List<Object> results = (List<Object>) input;
-            DateTime timestamp;
-            if(results.get(0) instanceof Number){
-              timestamp =granularity.toDateTime(((Number) results.get(0)).longValue());
-            }else if(results.get(0) instanceof String){
-              timestamp = granularity.bucketStart(DateTimes.of(results.get(0).toString()));
-            }else{
-              throw new ISE("timestamp type error!");
-            }
-            //判断时间是否在intervals范围内
-            if(!checkTime(timestamp,intervals)){
-              return null;
-            }
             final int size = isResultLevelCache
                              ? query.getResultRowSizeWithPostAggregators()
                              : query.getResultRowSizeWithoutPostAggregators();
-
             final ResultRow resultRow = ResultRow.create(size);
+            try {
+            List<Object> results = (List<Object>) input;
+            DateTime timestamp = null;
+
+            if(results.get(0) instanceof String){
+              String headerAndTimestamp=(String)results.get(0);
+              if(headerAndTimestamp.contains(HEADER_SPLIT)){
+                globalIndexToCacheColPosMap = parseHeaderToCacheColPosMap(headerAndTimestamp.split(HEADER_SPLIT)[0]);
+              }
+            }
+
+            if(resultRowHasTimestamp){
+              if(results.get(0) instanceof String){
+                String headerAndTimestamp=(String)results.get(0);
+                if(headerAndTimestamp.contains(HEADER_SPLIT)){
+                  timestamp =granularity.toDateTime(Long.parseLong(headerAndTimestamp.split(HEADER_SPLIT)[1]));
+                }else{
+                  timestamp = granularity.bucketStart(DateTimes.of(results.get(0).toString()));
+                }
+              } else if (results.get(0) instanceof Number) {
+                timestamp = granularity.toDateTime(((Number) results.get(0)).longValue());
+              } else {
+                throw new ISE("timestamp is not String or Number");
+              }
+
+              //判断时间是否在intervals范围内
+              if(!checkTime(timestamp,intervals)){
+                return null;
+              }
+            }
 
             if (resultRowHasTimestamp) {
               resultRow.set(0, timestamp.getMillis());
@@ -842,16 +833,19 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
             while (dimsIter.hasNext()) {
               final DimensionSpec dimensionSpec = dimsIter.next();
               // Must convert generic Jackson-deserialized type into the proper type.
+              int cachePos = globalIndexToCacheColPosMap.get(colDictionary.getId(
+                  Arrays.toString(dimensionSpec.getCacheKey())));
               resultRow.set(
                   dimensionStart + dimPos,
-                  DimensionHandlerUtils.convertObjectToType(results.get(colDictionary.getId(
-                                                                Arrays.toString(dimensionSpec.getCacheKey()))),
+                  DimensionHandlerUtils.convertObjectToType(results.get(cachePos),
                                                             dimensionSpec.getOutputType())
               );
               dimPos++;
             }
 
-            CacheStrategy.fetchAggregatorsFromCache(colDictionary,
+            CacheStrategy.fetchAggregatorsFromCache(
+                globalIndexToCacheColPosMap,
+                colDictionary,
                 aggs,
                 results,
                 isResultLevelCache,
@@ -861,12 +855,22 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
             );
 
             if (isResultLevelCache) {
-              for (int postPos = 0; postPos < query.getPostAggregatorSpecs().size(); postPos++) {
-                resultRow.set(postAggregatorStart + postPos,
-                              results.get(colDictionary.getId(Arrays.toString(query.getPostAggregatorSpecs().get(postPos).getCacheKey()))));
+              for (int postPos = 0; postPos < postAggs.size(); postPos++) {
+                int pos =
+                    colDictionary.getId(Arrays.toString(postAggs.get(postPos).getCacheKey()));
+                int postCachePos = globalIndexToCacheColPosMap.get(pos);
+                Object cacheVal=null;
+                if (postCachePos<results.size()){
+                  cacheVal = results.get(postCachePos);
+                }else{
+                  log.error("postCachePos error postCachePos {}, but cache size {}, {}",postCachePos, results.size(),query);
+                }
+                resultRow.set(postAggregatorStart + postPos, cacheVal);
               }
             }
-
+            }catch (Exception e){
+              log.error("pullFromCacheReuseFunction error {}, {}",e,query);
+            }
             return resultRow;
           }
         };
@@ -920,7 +924,25 @@ public class GroupByQueryQueryToolChest extends QueryToolChest<ResultRow, GroupB
       }
     };
   }
-
+  public static Map<Integer, Integer> parseHeaderToCacheColPosMap(String input) {
+    Map<Integer, Integer> resultMap = new HashMap<>();
+    if (input == null || input.isEmpty()) {
+      return resultMap;
+    }
+    String[] parts = input.split(",");
+    for (int i = 0; i < parts.length; i++) {
+      String trimmedPart = parts[i].trim();
+      if (!trimmedPart.isEmpty()) {
+        try {
+          int number = Integer.parseInt(trimmedPart);
+          resultMap.put(number, i);
+        } catch (NumberFormatException e) {
+          // 忽略无法解析的字符串，根据题目假设输入均为有效整数
+        }
+      }
+    }
+    return resultMap;
+  }
 
   @Override
   public boolean canPerformSubquery(Query<?> subquery)

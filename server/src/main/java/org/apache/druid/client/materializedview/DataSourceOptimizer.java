@@ -330,11 +330,13 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
     List<Query> queries = new ArrayList<>();
     for (Map.Entry<String,List<Interval>> entry:queryDsIntervals.entrySet()) {
       // group by limitSpec offset,limit改写为0,offset+limit
-      GroupByQuery groupByQuery=(GroupByQuery)query;
-      if(groupByQuery.getLimitSpec() instanceof DefaultLimitSpec){
-        DefaultLimitSpec limitSpec = (DefaultLimitSpec) groupByQuery.getLimitSpec();
-        query=groupByQuery.withLimitSpec(new DefaultLimitSpec(limitSpec.getColumns(),0,
-                                                              limitSpec.getLimit() + limitSpec.getOffset()));
+      if(query instanceof GroupByQuery){
+        GroupByQuery groupByQuery=(GroupByQuery)query;
+        if(groupByQuery.getLimitSpec() instanceof DefaultLimitSpec){
+          DefaultLimitSpec limitSpec = (DefaultLimitSpec) groupByQuery.getLimitSpec();
+          query=groupByQuery.withLimitSpec(new DefaultLimitSpec(limitSpec.getColumns(),0,
+                                                                limitSpec.getLimit() + limitSpec.getOffset()));
+        }
       }
       List<SegmentDescriptor> segmentDescriptors = queryDsSegmentDescriptors.get(entry.getKey());
       if(segmentDescriptors.isEmpty()){

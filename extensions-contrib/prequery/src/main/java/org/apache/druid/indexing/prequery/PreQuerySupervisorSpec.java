@@ -102,13 +102,13 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
       @JsonProperty("policyConfig") @Nullable PolicyConfig policyConfig,
       @JsonProperty("context") @Nullable Map<String, Object> context,
       @JsonProperty("suspended") @Nullable Boolean suspended,
+      @JsonProperty("preQueryTaskConfig") @Nullable PreQueryTaskConfig config,
       @JacksonInject ObjectMapper objectMapper,
       @JacksonInject TaskMaster taskMaster,
       @JacksonInject TaskStorage taskStorage,
       @JacksonInject MetadataSupervisorManager metadataSupervisorManager,
       @JacksonInject SqlSegmentsMetadataManager sqlSegmentsMetadataManager,
       @JacksonInject IndexerMetadataStorageCoordinator metadataStorageCoordinator,
-      @JacksonInject PreQueryTaskConfig config,
       @JacksonInject AuthorizerMapper authorizerMapper,
       @JacksonInject ChatHandlerProvider chatHandlerProvider,
       @JacksonInject SupervisorStateManagerConfig supervisorStateManagerConfig,
@@ -123,7 +123,7 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
     this.inputDataSourceSpec = inputDataSourceSpec;
     this.policyConfig = policyConfig == null ? new PolicyConfig(null, null, null, null, null, null, null) : policyConfig;
     this.tuningConfig = tuningConfig == null ? ParallelIndexTuningConfig.defaultConfig() : tuningConfig;
-    this.config = config;
+    this.config = config == null ? new PreQueryTaskConfig(): config;
     this.prequeryDatasource = inputDataSourceSpec.getDataSource()+"_prequery";
     this.context = context == null ? new HashMap<>() : context;
     this.objectMapper = objectMapper;
@@ -138,7 +138,7 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
     this.suspended = suspended != null ? suspended : false;
     this.segmentCacheManagerFactory = segmentCacheManagerFactory;
     this.retryPolicyFactory = retryPolicyFactory;
-    this.tuningConfig.setMaxNumSegmentsToMerge(config.getMaxNumSegmentsToMerge());
+    this.tuningConfig.setMaxNumSegmentsToMerge(this.config.getMaxNumSegmentsToMerge());
     this.actualTuningConfig = this.tuningConfig;
     //update actualTuningConfig
     if (this.tuningConfig.getPartitionsSpec() == null
@@ -437,13 +437,13 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
         policyConfig,
         context,
         true,
+        config,
         objectMapper,
         taskMaster,
         taskStorage,
         metadataSupervisorManager,
         sqlSegmentsMetadataManager,
         metadataStorageCoordinator,
-        config,
         authorizerMapper,
         chatHandlerProvider,
         supervisorStateManagerConfig,
@@ -461,13 +461,13 @@ public class PreQuerySupervisorSpec implements SupervisorSpec
         policyConfig,
         context,
         false,
+        config,
         objectMapper,
         taskMaster,
         taskStorage,
         metadataSupervisorManager,
         sqlSegmentsMetadataManager,
         metadataStorageCoordinator,
-        config,
         authorizerMapper,
         chatHandlerProvider,
         supervisorStateManagerConfig,

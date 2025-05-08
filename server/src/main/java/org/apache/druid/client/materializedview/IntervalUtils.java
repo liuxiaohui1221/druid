@@ -65,7 +65,10 @@ public class IntervalUtils {
     return merged;
   }
 
-  public static boolean isValidLifeTime(String insertTime, int lifetime) {
+  public static boolean isValidLifeTime(boolean skipCheck, String insertTime, int lifetime) {
+    if(skipCheck){
+      return true;
+    }
     DateTime now = DateTimes.nowUtc();
     if(now.getDayOfMonth()==DateTimes.of(insertTime).getDayOfMonth()){
       return now.getHourOfDay() < lifetime;
@@ -73,10 +76,10 @@ public class IntervalUtils {
     return false;
   }
 
-  public static Map<Interval,Integer> getValidIntervals(Map<Interval,Integer> intervals) {
+  public static Map<Interval,Integer> getValidIntervals(boolean skipCheck, Map<Interval,Integer> intervals) {
     Map<Interval,Integer> validIntervals = new HashMap<>();
     for(Map.Entry<Interval,Integer> entry : intervals.entrySet()){
-      if(isValidLifeTime(DateTimes.nowUtc().toString(),entry.getValue())){
+      if(isValidLifeTime(skipCheck, DateTimes.nowUtc().toString(),entry.getValue())){
         validIntervals.put(entry.getKey(),entry.getValue());
       }
     }

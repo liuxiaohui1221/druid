@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import com.google.common.collect.Sets;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.granularity.Granularity;
@@ -16,6 +17,7 @@ import org.joda.time.DateTimeZone;
 import org.joda.time.Period;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -42,7 +44,7 @@ public class DerivativeDataSourceCreationParams
                                             ) {
     this.dataSource = dataSource;
     this.intervalStr = intervalStr;
-    this.dimensions = dimensions;
+    this.dimensions = dimensions!=null ? dimensions: new HashSet<>();
     this.metrics = metrics;
     this.queryGranularity = queryGranularity;
     this.lifeTime = lifeTime;

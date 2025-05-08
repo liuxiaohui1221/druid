@@ -80,9 +80,9 @@ public class IndexerMetadataStorageAdapter
     return indexerMetadataStorageCoordinator.deletePendingSegmentsCreatedInInterval(dataSource, deleteInterval);
   }
 
-  public void createTemplate(String dataSource, DerivativeDataSourceCreationParams params)
+  public void createTemplate(boolean skipCheck, String dataSource, DerivativeDataSourceCreationParams params)
       throws JsonProcessingException
   {
-    indexerMetadataStorageCoordinator.createNewTemplate(dataSource,params);
+    indexerMetadataStorageCoordinator.createNewTemplate(skipCheck,dataSource,params);
   }
 }

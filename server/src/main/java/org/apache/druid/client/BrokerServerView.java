@@ -293,7 +293,7 @@ public class BrokerServerView implements TimelineServerView
           selectors.put(segmentId, selector);
 
           // 如果产生物化视图segment，则还原保存被物化的segments
-          log.info("Added derivative segment[%s] for server[%s]", segment, server);
+          log.info("Added derivative segment[%s] for server[%s]", segment.getId(), server);
           addedOrRemovedMaterializedSegments(server, segment, true);
         }
 

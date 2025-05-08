@@ -407,10 +407,11 @@ public interface IndexerMetadataStorageCoordinator
 
   /**
    * Inserts a new entry for 'dataSource' in the dataSource metadata table.
+   * @param skipCheck 是否跳过模板有效期检查
    * @param tableName 预查询模板中表名
    * @param params 预查询模板信息
    */
-  void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params) throws JsonProcessingException;
+  void createNewTemplate(boolean skipCheck, String tableName, DerivativeDataSourceCreationParams params) throws JsonProcessingException;
 
   /**
    * 状态机方式更新模板状态

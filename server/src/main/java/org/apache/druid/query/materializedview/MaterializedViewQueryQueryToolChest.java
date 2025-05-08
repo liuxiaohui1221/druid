@@ -36,6 +36,8 @@ import org.apache.druid.query.aggregation.MetricManipulationFn;
 import org.apache.druid.query.context.ResponseContext;
 import org.apache.druid.query.groupby.GroupByQuery;
 import org.apache.druid.query.groupby.ResultRow;
+import org.apache.druid.query.topn.TopNQuery;
+import org.apache.druid.query.topn.TopNQueryQueryToolChest;
 import org.apache.druid.segment.column.RowSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -134,6 +136,9 @@ public class MaterializedViewQueryQueryToolChest extends QueryToolChest
     query=getRealQuery(query);
     if(query instanceof GroupByQuery){
       return resultSequence.map(row -> ((ResultRow) row).getArray());
+    } else if (query instanceof TopNQuery) {
+      TopNQueryQueryToolChest toolChest = (TopNQueryQueryToolChest) warehouse.getToolChest(query);
+      return toolChest.resultsAsArrays((TopNQuery) query, resultSequence);
     }
     return super.resultsAsArrays(query, resultSequence);
   }
@@ -144,6 +149,9 @@ public class MaterializedViewQueryQueryToolChest extends QueryToolChest
     query = getRealQuery(query);
     if(query instanceof GroupByQuery){
       return ((GroupByQuery) query).getResultRowSignature();
+    } else if (query instanceof TopNQuery) {
+      TopNQueryQueryToolChest toolChest = (TopNQueryQueryToolChest) warehouse.getToolChest(query);
+      return toolChest.resultArraySignature((TopNQuery) query);
     }
     return super.resultArraySignature(query);
   }

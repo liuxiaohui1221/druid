@@ -34,6 +34,7 @@ import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Handles caching-related tasks for a particular query type.
@@ -180,6 +181,7 @@ public interface CacheStrategy<T, CacheType, QueryType extends Query<T>>
   }
 
   static void fetchAggregatorsFromCache(
+      Map<Integer, Integer> globalIndexToCacheColPosMap,
       StringDimensionDictionary colDictionary,
       List<AggregatorFactory> aggregators,
       List<Object> results,
@@ -193,13 +195,17 @@ public interface CacheStrategy<T, CacheType, QueryType extends Query<T>>
       ColumnType intermediateType = aggregator.getIntermediateType();
 
       boolean needsDeserialize = !isResultLevelCache || resultType.equals(intermediateType);
-
+      int pos = colDictionary.getId(Arrays.toString(aggregator.getCacheKey()));
+      int cachePos = globalIndexToCacheColPosMap.get(pos);
+      Object val = null;
+      if(pos<results.size()){
+        val = results.get(cachePos);
+      }
       if (needsDeserialize) {
         addToResultFunction.apply(aggregator.getName(), i,
-                                  aggregator.deserialize(results.get(colDictionary.getId(Arrays.toString(aggregator.getCacheKey())))));
+                                  aggregator.deserialize(val));
       } else {
-        addToResultFunction.apply(aggregator.getName(), i,
-                                  results.get(colDictionary.getId(Arrays.toString(aggregator.getCacheKey()))));
+        addToResultFunction.apply(aggregator.getName(), i, val);
       }
     }
   }

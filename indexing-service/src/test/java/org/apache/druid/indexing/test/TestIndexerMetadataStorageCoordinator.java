@@ -77,7 +77,7 @@ public class TestIndexerMetadataStorageCoordinator implements IndexerMetadataSto
   }
 
   @Override
-  public void createNewTemplate(String tableName, DerivativeDataSourceCreationParams params)
+  public void createNewTemplate(boolean skipCheck, String tableName, DerivativeDataSourceCreationParams params)
       throws JsonProcessingException
   {
 

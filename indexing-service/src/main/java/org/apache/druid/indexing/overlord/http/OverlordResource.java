@@ -436,7 +436,8 @@ public class OverlordResource
       @Context HttpServletRequest request
   ) throws JsonProcessingException
   {
-    indexerMetadataStorageAdapter.createTemplate(dataSource, params);
+    Boolean skipCheck = Boolean.valueOf(request.getHeader("skipCheck"));
+    indexerMetadataStorageAdapter.createTemplate(skipCheck != null && skipCheck, dataSource, params);
     return Response.ok().entity(null).build();
   }
   @GET

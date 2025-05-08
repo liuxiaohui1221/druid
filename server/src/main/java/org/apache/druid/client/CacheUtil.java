@@ -79,7 +79,7 @@ public class CacheUtil
         }
         //比较指标
         if (!parentSubKey.getAggregators().containsAll(query.getRequiredColumns())){
-
+          continue;
         }
         //比较过滤条件
         if (!isFilterCompatible(parentSubKey.getFilter(), queryFilter)){

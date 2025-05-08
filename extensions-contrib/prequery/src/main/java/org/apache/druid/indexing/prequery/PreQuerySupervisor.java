@@ -230,7 +230,8 @@ public class PreQuerySupervisor implements Supervisor
           //失效时段更新到数据库
           for(Pair<String,DerivativeDataSourceMetadata> deritiveDataSourceMetadata:deritiveDataSourceMetadatas){
             Map<Interval, Integer> intervals = deritiveDataSourceMetadata.rhs.getIntervals();
-            Map<Interval, Integer> validIntervals = IntervalUtils.getValidIntervals(intervals);
+            Map<Interval, Integer> validIntervals =
+                IntervalUtils.getValidIntervals(config.getSkipCheckTemplateLifeTime(),intervals);
             if(!intervals.equals(validIntervals)){
               deritiveDataSourceMetadata.rhs.setIntervals(validIntervals);
               metadataStorageCoordinator.resetDataSourceMetadata(deritiveDataSourceMetadata.lhs,

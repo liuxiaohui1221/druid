@@ -19,12 +19,15 @@
 
 package org.apache.druid.indexing.prequery;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.druid.indexer.partitions.DynamicPartitionsSpec;
 import org.apache.druid.indexer.partitions.HashedPartitionsSpec;
 import org.apache.druid.indexer.partitions.PartitionsSpec;
 import org.joda.time.Period;
+
+import javax.annotation.Nullable;
 
 public class PreQueryTaskConfig
 {
@@ -37,19 +40,46 @@ public class PreQueryTaskConfig
   @JsonProperty
   private int maxNumSegmentsToMerge = 30;
   @JsonProperty
+  boolean skipCheckTemplateLifeTime = true;
+  @JsonProperty
   private PartitionsSpec backupOverwritePartitionsSpec = getDefaultPartitionsSpec(true, null);
   @JsonProperty
   private PartitionsSpec backupAppendingPartitionsSpec = getDefaultPartitionsSpec(false, null);
 
+  public PreQueryTaskConfig()
+  {
+  }
+
+  @JsonCreator
+  public PreQueryTaskConfig(
+      @JsonProperty("taskCheckDuration") @Nullable Period taskCheckDuration,
+      @JsonProperty("hadoopIntervalCheckDuration") @Nullable Period hadoopIntervalCheckDuration,
+      @JsonProperty("enableTruncateIngestionTime") @Nullable Boolean enableTruncateIngestionTime,
+      @JsonProperty("maxNumSegmentsToMerge") @Nullable Integer maxNumSegmentsToMerge,
+      @JsonProperty("skipCheckTemplateLifeTime") @Nullable Boolean skipCheckTemplateLifeTime,
+      @JsonProperty("backupOverwritePartitionsSpec") @Nullable  PartitionsSpec backupOverwritePartitionsSpec,
+      @JsonProperty("backupAppendingPartitionsSpec") @Nullable  PartitionsSpec backupAppendingPartitionsSpec
+  )
+  {
+    this.taskCheckDuration = taskCheckDuration == null ? new Period("PT1M") : taskCheckDuration;
+    this.hadoopIntervalCheckDuration = hadoopIntervalCheckDuration == null ? new Period("P1D") : hadoopIntervalCheckDuration;
+    this.enableTruncateIngestionTime = enableTruncateIngestionTime == null || enableTruncateIngestionTime;
+    this.maxNumSegmentsToMerge = maxNumSegmentsToMerge == null ? 30 : maxNumSegmentsToMerge;
+    this.skipCheckTemplateLifeTime = skipCheckTemplateLifeTime == null || skipCheckTemplateLifeTime;
+    this.backupOverwritePartitionsSpec = backupOverwritePartitionsSpec == null ? getDefaultPartitionsSpec(true, null) : backupOverwritePartitionsSpec;
+    this.backupAppendingPartitionsSpec = backupAppendingPartitionsSpec == null ? getDefaultPartitionsSpec(false, null) : backupAppendingPartitionsSpec;
+  }
+  @JsonProperty("taskCheckDuration")
   public Period getTaskCheckDuration()
   {
     return taskCheckDuration;
   }
+  @JsonProperty("backupOverwritePartitionsSpec")
   public PartitionsSpec getBackupOverwritePartitionsSpec()
   {
     return backupOverwritePartitionsSpec;
   }
-
+  @JsonProperty("hadoopIntervalCheckDuration")
   public Period getHadoopIntervalCheckDuration()
   {
     return hadoopIntervalCheckDuration;
@@ -59,7 +89,7 @@ public class PreQueryTaskConfig
   {
     this.hadoopIntervalCheckDuration = hadoopIntervalCheckDuration;
   }
-
+  @JsonProperty("maxNumSegmentsToMerge")
   public int getMaxNumSegmentsToMerge()
   {
     return maxNumSegmentsToMerge;
@@ -70,12 +100,12 @@ public class PreQueryTaskConfig
   {
     this.taskCheckDuration = taskCheckDuration;
   }
-
+  @JsonProperty("backupAppendingPartitionsSpec")
   public PartitionsSpec getBackupAppendingPartitionsSpec()
   {
     return backupAppendingPartitionsSpec;
   }
-
+  @JsonProperty("enableTruncateIngestionTime")
   public boolean isEnableTruncateIngestionTime()
   {
     return enableTruncateIngestionTime;
@@ -92,5 +122,9 @@ public class PreQueryTaskConfig
     } else {
       return new DynamicPartitionsSpec(Integer.MAX_VALUE, null);
     }
+  }
+  @JsonProperty("skipCheckTemplateLifeTime")
+  public boolean getSkipCheckTemplateLifeTime() {
+    return skipCheckTemplateLifeTime;
   }
 }

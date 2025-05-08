@@ -55,6 +55,7 @@ import org.apache.druid.query.groupby.GroupByQuery;
 import org.apache.druid.query.groupby.GroupingEngine;
 import org.apache.druid.query.materializedview.MaterializedViewOptimizer;
 import org.apache.druid.query.materializedview.MaterializedViewQuery;
+import org.apache.druid.query.topn.TopNQuery;
 import org.apache.druid.server.metrics.QueryCountStatsProvider;
 import org.apache.druid.server.security.Access;
 import org.apache.druid.server.security.AuthConfig;
@@ -152,7 +153,7 @@ public class QueryResource implements QueryCountStatsProvider
 
   public static Query getMaterializedViewQueryIfNecessary(Query<?>  baseQuery, MaterializedViewOptimizer mvOptimizer)
   {
-    if (!(baseQuery instanceof BaseQuery) || !(baseQuery instanceof GroupByQuery)) {
+    if (!(baseQuery instanceof GroupByQuery) && !(baseQuery instanceof TopNQuery)) {
       return baseQuery;
     }
     boolean enableMv=baseQuery.context().getBoolean(QueryContexts.CTX_KEY_ENABLE_MATERIALIZED_VIEW,

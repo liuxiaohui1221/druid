@@ -13,7 +13,7 @@
           "path", "method", "root_appid", "pappid", "pappsysid",
           "pagent", "pagent_ip", "uevent_model", "uevent_id", "user_id", "session_id",
           "host", "ip_addr", "province", "city", "page_id", "page_group", "tag","service_type","papp_type",
-          "status","status_code"
+          "status","status_code", "code", "is_model"
         ],
         "dimensionExclusions": [
           "timestamp",

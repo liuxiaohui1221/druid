@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import org.apache.druid.data.input.MapBasedInputRow;
 import org.apache.druid.data.input.MapBasedRow;
 import org.apache.druid.data.input.Row;
+import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.query.aggregation.AggregatorFactory;
 import org.apache.druid.query.aggregation.DoubleSumAggregatorFactory;
 import org.apache.druid.query.aggregation.LongSumAggregatorFactory;
@@ -62,6 +63,7 @@ import java.util.stream.Collectors;
  */
 public final class ResultRow
 {
+  private static final Logger log = new Logger(ResultRow.class);
   private final Object[] row;
 
   private ResultRow(final Object[] row)
@@ -180,14 +182,21 @@ public final class ResultRow
     final RowSignature signature = query.getResultRowSignature();
     final Map<String, Object> map = new HashMap<>();
 
-    for (int i = query.getResultRowDimensionStart(); i < row.length; i++) {
-      final String columnName = signature.getColumnName(i);
-      if(i>=query.getResultRowAggregatorStart()){
-        map.put(query.getAggregatorSpecs().get(i-query.getResultRowAggregatorStart()).getFieldName(), row[i]);
-      }else{
-        map.put(columnName, row[i]);
+    try {
+      for (int i = query.getResultRowDimensionStart(); i < row.length; i++) {
+        final String columnName = signature.getColumnName(i);
+        if(i>=query.getResultRowAggregatorStart()){
+          if(i-query.getResultRowAggregatorStart()<query.getAggregatorSpecs().size()){
+            map.put(query.getAggregatorSpecs().get(i-query.getResultRowAggregatorStart()).getFieldName(), row[i]);
+          }
+        }else{
+          map.put(columnName, row[i]);
+        }
       }
+    }catch (Exception e){
+      log.error(e, "Failed to convert row to output metric map");
     }
+
 
     return map;
   }
