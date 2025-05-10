@@ -1,7 +1,7 @@
 {
   "type": "materialized_view",
   "baseDataSource": "dwm_request",
-  "dataSource":"mv_dwm_request_hour",
+  "dataSource":"mv_dwm_request_hour2",
   "granularitySpec": {
     "type": "uniform",
     "segmentGranularity": "HOUR",
@@ -216,6 +216,6 @@
     "type": "index_parallel"
   },
   "context": {
-    "maxTaskCount": 3
+    "maxTaskCount": 1
   }
 }

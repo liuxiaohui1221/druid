@@ -1,11 +1,11 @@
 {
   "type": "materialized_view",
-  "baseDataSource": "dwm_request",
-  "dataSource":"mv_dwm_request_minute",
+  "baseDataSource": "mv_dwm_request_minute",
+  "dataSource":"mv_dwm_request_hour",
   "granularitySpec": {
+    "type": "uniform",
     "segmentGranularity": "HOUR",
-    "queryGranularity": "MINUTE",
-    "rollup": true
+    "queryGranularity": "HOUR"
   },
   "dimensionsSpec": {
     "dimensions": [

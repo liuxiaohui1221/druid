@@ -186,6 +186,6 @@
     "type": "index_parallel"
   },
   "context": {
-    "maxTaskCount": 3
+    "maxTaskCount": 1
   }
 }

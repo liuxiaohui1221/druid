@@ -212,13 +212,13 @@ public class DerivativeDataSourceManager
 
   private void updateDerivatives()
   {
-    final String sql;
-    if(config.isEnablePreQuery()){
-      sql = "SELECT DISTINCT dataSource,commit_metadata_payload from "+dbTables.get().getPreQueryTemplateTable()+" dpqt inner "
-            + "join %s dds on dpqt.template_name = dds.dataSource";
-    }else{
-      sql = "SELECT DISTINCT dataSource,commit_metadata_payload FROM %s";
-    }
+    final String sql = "SELECT DISTINCT dataSource,commit_metadata_payload FROM %s";
+//    if(config.isEnablePreQuery()){
+//      sql = "SELECT DISTINCT dataSource,commit_metadata_payload from "+dbTables.get().getPreQueryTemplateTable()+" dpqt inner "
+//            + "join %s dds on dpqt.template_name = dds.dataSource";
+//    }else{
+//
+//    }
     List<Pair<String, DerivativeDataSourceMetadata>> derivativesInDatabase = connector.retryWithHandle(
         handle ->
             handle

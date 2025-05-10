@@ -46,9 +46,6 @@ public class PreQueryDruidModule implements DruidModule
         new SimpleModule(getClass().getSimpleName())
             .registerSubtypes(
                 new NamedType(PreQuerySupervisorSpec.class, "PreQuery"),
-                // new NamedType(HadoopMaterializedViewSupervisorSpec.class, "derivativeDataSource"),
-                new NamedType(MaterializedViewTask.class, "index_materialized_view"),
-                new NamedType(DerivativeDataSourceMetadata.class, "materialized_view"),
                 new NamedType(PreQueryTemplateMetadata.class, "PreQueryTemplate"),
                 new NamedType(PreQuerryDataSourceMetadata.class, "PreQuery"),
                 new NamedType(DerivativeDataSourceCreationParams.class, "PreQuery_template")
@@ -59,6 +56,6 @@ public class PreQueryDruidModule implements DruidModule
   @Override
   public void configure(Binder binder)
   {
-    JsonConfigProvider.bind(binder, "druid.materialized.view.task", PreQueryTaskConfig.class);
+    JsonConfigProvider.bind(binder, "druid.prequery.task", PreQueryTaskConfig.class);
   }
 }
