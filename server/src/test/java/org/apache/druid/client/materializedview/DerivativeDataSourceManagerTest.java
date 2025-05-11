@@ -20,14 +20,19 @@
 package org.apache.druid.client.materializedview;
 
 import org.apache.druid.indexing.overlord.DerivativeDataSource;
+import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.granularity.Granularities;
+import org.apache.druid.java.util.common.granularity.Granularity;
+import org.joda.time.Interval;
 import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -113,10 +118,10 @@ public class DerivativeDataSourceManagerTest
     DerivativeDataSourceManager.DERIVATIVES_REF.set(actualMap);
     Assert.assertEquals(true, expectedMap.size() == actualMap.size());
     Assert.assertEquals(expectedMap.entrySet(), actualMap.entrySet());
-    Assert.assertEquals(baseds_a, derivativeDataSourceManager.getRootBaseDataSource(derivative_a));
-    Assert.assertEquals(baseds_a, derivativeDataSourceManager.getRootBaseDataSource(derivative01_a));
-    Assert.assertEquals(baseds_a, derivativeDataSourceManager.getRootBaseDataSource(derivative02_a));
-    Assert.assertEquals(baseds_a, derivativeDataSourceManager.getRootBaseDataSource(derivative03_a));
+    Assert.assertEquals(baseds_a, DerivativeDataSourceManager.getRootBaseDataSource(derivative_a));
+    Assert.assertEquals(baseds_a, DerivativeDataSourceManager.getRootBaseDataSource(derivative01_a));
+    Assert.assertEquals(baseds_a, DerivativeDataSourceManager.getRootBaseDataSource(derivative02_a));
+    Assert.assertEquals(baseds_a, DerivativeDataSourceManager.getRootBaseDataSource(derivative03_a));
   }
 
   @Test
@@ -137,12 +142,26 @@ public class DerivativeDataSourceManagerTest
             list);
 
     DerivativeDataSourceManager.DERIVATIVES_REF.set(actualMap);
-    Assert.assertEquals(D, derivativeDataSourceManager.getRootBaseDataSource(A));
-    Assert.assertEquals(D, derivativeDataSourceManager.getRootBaseDataSource(B));
-    Assert.assertEquals(D, derivativeDataSourceManager.getRootBaseDataSource(C));
+    Assert.assertEquals(D, DerivativeDataSourceManager.getRootBaseDataSource(A));
+    Assert.assertEquals(D, DerivativeDataSourceManager.getRootBaseDataSource(B));
+    Assert.assertEquals(D, DerivativeDataSourceManager.getRootBaseDataSource(C));
 
     Assert.assertEquals(B, derivativeDataSourceManager.getDirectBaseDataSource(A));
     Assert.assertEquals(C, derivativeDataSourceManager.getDirectBaseDataSource(B));
     Assert.assertEquals(D, derivativeDataSourceManager.getDirectBaseDataSource(C));
+  }
+
+  @Test
+  public void testDecideGranularity(){
+    Set<DerivativeDataSource> allDerivatives = new HashSet<>();
+    allDerivatives.add(new DerivativeDataSource("ds1","ds2",Granularities.DAY));
+    List<Interval> queryIntervals=new ArrayList<>();
+    queryIntervals.add(Intervals.of("2022-01-01T00:00:00.000Z/2022-01-01T01:00:00.000Z"));
+    Granularity granularity = DerivativeDataSourceManager.decideMaxGranularity(allDerivatives, queryIntervals);
+    Assert.assertEquals(null,granularity);
+
+    queryIntervals.add(Intervals.of("2022-01-01T00:00:00.000Z/2022-01-02T02:00:00.000Z"));
+    granularity = DerivativeDataSourceManager.decideMaxGranularity(allDerivatives, queryIntervals);
+    Assert.assertEquals(Granularities.DAY,granularity);
   }
 }

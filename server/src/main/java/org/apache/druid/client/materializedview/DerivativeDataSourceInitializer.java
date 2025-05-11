@@ -1,27 +1,15 @@
 package org.apache.druid.client.materializedview;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.google.common.base.Splitter;
-import com.google.common.hash.Hashing;
-import jdk.nashorn.internal.ir.ObjectNode;
-import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.indexing.overlord.DerivativeDataSource;
-import org.apache.druid.java.util.common.DateTimes;
-import org.apache.druid.java.util.common.Intervals;
-import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.granularity.Granularity;
-import org.joda.time.DateTime;
 import org.joda.time.Interval;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 public class DerivativeDataSourceInitializer implements Function<DerivativeDataSourceCreationParams, DerivativeDataSourceMetadata>
 {
@@ -30,13 +18,13 @@ public class DerivativeDataSourceInitializer implements Function<DerivativeDataS
   {
     String rootBaseDataSource = DerivativeDataSourceManager.getRootBaseDataSource(input.getDataSource());
     Granularity granularity = input.getQueryGranularity();
+    Map<Interval,Integer> intervalLifeTimes = IntervalUtils.parseAndMerge(input.getIntervalStr(), input.getLifeTime() +
+                                                                                               "");
     //找到兼容性匹配的最高聚合粒度和最小维度的派生表
     SortedSet<DerivativeDataSource> candidateSortedDerivatives = DerivativeDataSourceManager.getCandidateSortedDerivatives(rootBaseDataSource,
                                                                                                                            input.getDimensions(),
-                                                                                                                           granularity
-    );
-    Map<Interval,Integer> intervalLifeTimes = IntervalUtils.parseAndMerge(input.getIntervalStr(), input.getLifeTime() +
-                                                                                               "");
+                                                                                                                           granularity,
+                                                                                                                           new ArrayList<>(intervalLifeTimes.keySet()));
     //过滤失效时段
 //    Map<Interval,Integer> filterdIntervalLifeTimes = new HashMap<>();
 //    for(Map.Entry<Interval,Integer> entry : intervalLifeTimes.entrySet()){

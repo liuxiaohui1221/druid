@@ -44,8 +44,10 @@ import org.apache.druid.metadata.SQLMetadataConnector;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.TableDataSource;
 import org.joda.time.Duration;
+import org.joda.time.Interval;
 import org.skife.jdbi.v2.StatementContext;
 
+import javax.annotation.Nullable;
 import java.sql.ResultSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -308,23 +310,33 @@ public class DerivativeDataSourceManager
 
   /**
    * 按查询聚合粒度从大到小排序
+   *
    * @param originBaseDataSource
    * @param requiredFields
    * @param queryGranularity
+   * @param queryIntervals
    * @return
    */
   public static SortedSet<DerivativeDataSource> getCandidateSortedDerivatives(String originBaseDataSource,
                                                                         Set<String> requiredFields,
-                                                                       Granularity queryGranularity
+                                                                       Granularity queryGranularity,
+                                                                              List<Interval> queryIntervals
   ) {
     SortedSet<DerivativeDataSource> results = new TreeSet<>();
 
     Set<DerivativeDataSource> allDerivatives = new HashSet<>();
     getAllDerivatives().values().forEach(map->allDerivatives.addAll(map.values()));
     Set<DerivativeDataSource> derivativesWithRequiredFields = new HashSet<>();
+
+    //根据查询时间范围确定最大支持的聚合粒度数据源
+    Granularity requiredMaxGranularity = decideMaxGranularity(allDerivatives,queryIntervals);
     for (DerivativeDataSource derivativeDataSource : allDerivatives) {
+      Granularity mvGranularity = derivativeDataSource.getGranularitySpec().getQueryGranularity();
+      if(requiredMaxGranularity == null || requiredMaxGranularity.isFinerThan(mvGranularity)){
+        continue;
+      }
       if (derivativeDataSource.getColumns().containsAll(requiredFields)
-          && !queryGranularity.isFinerThan(derivativeDataSource.getGranularitySpec().getQueryGranularity())) {
+          && !queryGranularity.isFinerThan(mvGranularity)) {
         derivativesWithRequiredFields.add(derivativeDataSource);
       }
     }
@@ -334,5 +346,40 @@ public class DerivativeDataSourceManager
       }
     }
     return results;
+  }
+
+  @VisibleForTesting
+  @Nullable
+  public static Granularity decideMaxGranularity(Set<DerivativeDataSource> allDerivatives,
+                                               List<Interval> queryIntervals) {
+    Granularity requiredMaxGranularity = null;
+    for(Interval interval:queryIntervals){
+      for(DerivativeDataSource derivativeDataSource:allDerivatives){
+        Granularity derivativeGranularity = derivativeDataSource.getGranularitySpec().getQueryGranularity();
+        if(requiredMaxGranularity == null || requiredMaxGranularity.isFinerThan(derivativeGranularity)){
+          //时间范围小于粒度单元直接跳过
+          if(interval.toDuration().compareTo(derivativeGranularity.bucket(interval.getStart()).toDuration())<0){
+            continue;
+          }
+          //时间段范围完整对齐粒度
+          boolean aligned = derivativeGranularity.isAligned(interval);
+          if(aligned){
+            requiredMaxGranularity = derivativeGranularity;
+          }
+          //包含完整粒度的时段
+          if(interval.contains(derivativeGranularity.bucket(interval.getEnd()))){
+            requiredMaxGranularity = derivativeGranularity;
+          }
+          //存在收或尾粒度取整的时间段比较
+          if(derivativeGranularity.bucketStart(interval.getStart()).equals(interval.getStart())
+             && (derivativeGranularity.bucketEnd(interval.getStart()).isBefore(interval.getEnd()))
+             || derivativeGranularity.bucketEnd(interval.getStart()).equals(interval.getEnd())){
+            requiredMaxGranularity = derivativeGranularity;
+          }
+        }
+
+      }
+    }
+    return requiredMaxGranularity;
   }
 }

@@ -140,7 +140,8 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
     }
     Map<String,List<Interval>> choosedTopDerivatives =
         getMaximizeGranDerivatives(originBaseDataSource, allQueryIntervals,
-                                   DerivativeDataSourceManager.getCandidateSortedDerivatives(originBaseDataSource, requiredFields.rhs, granularity
+                                   DerivativeDataSourceManager.getCandidateSortedDerivatives(
+                                       originBaseDataSource, requiredFields.rhs, granularity,query.getIntervals()
                                                                         ));
     if (choosedTopDerivatives.isEmpty()) {
       return Collections.singletonList(query);
@@ -356,9 +357,13 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
       SortedSet<DerivativeDataSource> derivativesWithRequiredFields) {
     Map<String, List<Interval>> result = new HashMap<>();
     for (DerivativeDataSource derivativeDataSource : ImmutableSortedSet.copyOfSorted(derivativesWithRequiredFields)) {
+      Optional<? extends TimelineLookup<String, ServerSelector>> timeline = serverView
+          .getTimeline(JoinDataSource.forDataSource(new TableDataSource(derivativeDataSource.getDataSource())));
+      if (!timeline.isPresent()) {
+        continue;
+      }
       final List<Interval> derivativeIntervals = remainingQueryIntervals.stream()
-                                                                        .flatMap(interval -> serverView
-                                                                            .getTimeline(JoinDataSource.forDataSource(new TableDataSource(derivativeDataSource.getDataSource())))
+                                                                        .flatMap(interval -> timeline
                                                                             .orElseThrow(() -> new ISE(
                                                                                 "No timeline for dataSource: %s",
                                                                                 derivativeDataSource.getDataSource()
@@ -366,7 +371,7 @@ public class DataSourceOptimizer implements MaterializedViewOptimizer
                                                                             .lookup(interval)
                                                                             .stream()
                                                                             .map(TimelineObjectHolder::getInterval)
-                                                                        )
+                                                                        ).filter(interval -> derivativeDataSource.getGranularitySpec().getQueryGranularity().isAligned(interval))
                                                                         .collect(Collectors.toList());
       // if the derivative does not contain any parts of intervals in the query, the derivative will
       // not be selected.

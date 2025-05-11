@@ -1,7 +1,7 @@
 {
   "type": "materialized_view",
-  "baseDataSource": "mv_request_src_hour",
-  "dataSource":"mv_request_src_day",
+  "baseDataSource": "mv_dwm_request_hour",
+  "dataSource":"mv_dwm_request_day",
   "granularitySpec": {
     "type": "uniform",
     "segmentGranularity": "DAY",
